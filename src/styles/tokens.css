@@ -1,0 +1,28 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c1218;
+  --card: #16202a;
+  --card-hover: #1c2833;
+  --card-border: #2c3b4a;
+  --card-border-hover: #466078;
+  --text: #e8eef5;
+  --text-muted: #9eb2c4;
+  --focus: #8ec5ff;
+  --oee-track: #2a3a4a;
+  --oee-arc: #8ec5ff;
+  --spark-line: #9dcef8;
+  --spark-peak: #f0b429;
+  --spark-breach: #ff6b6b;
+  --spark-last: #f7fbff;
+  --status-running: #3ddc97;
+  --status-idle: #6aa8ff;
+  --status-setup: #f0b429;
+  --status-warning: #f08a24;
+  --status-alarm: #ff5d5d;
+  --status-offline: #93a0ad;
+  --status-unknown: #93a0ad;
+  --shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  --radius: 14px;
+  --font: "Segoe UI", sans-serif;
+  --mono: Consolas, "Cascadia Mono", monospace;
+}

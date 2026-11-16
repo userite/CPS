@@ -1,0 +1,536 @@
+import { useEffect, useState } from "react";
+import type {
+  BlondinaState,
+  GenerateResult,
+  MachineKind,
+  MachineRow,
+  MeasurementRow,
+  ParameterRow,
+} from "../server/blondina";
+import "./Admin.css";
+
+type Tab = "machines" | "parameters" | "generator";
+
+type MachineDraft = {
+  id: string;
+  name: string;
+  model: string;
+  kind: MachineKind;
+};
+
+type ParameterDraft = {
+  id: string;
+  label: string;
+  unit: string;
+  rangeMin: string;
+  rangeMax: string;
+  sampleIntervalSeconds: string;
+  machineIds: string[];
+};
+
+const emptyMachine: MachineDraft = { id: "", name: "", model: "", kind: "lathe" };
+const emptyParameter: ParameterDraft = {
+  id: "",
+  label: "",
+  unit: "",
+  rangeMin: "",
+  rangeMax: "",
+  sampleIntervalSeconds: "",
+  machineIds: [],
+};
+
+function localInputValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function optionalNumber(value: string): number | null {
+  return value.trim() === "" ? null : Number(value);
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: { "content-type": "application/json", ...init?.headers },
+  });
+  const body = (await response.json()) as T & { error?: string };
+  if (!response.ok) throw new Error(body.error || "Заявката не мина.");
+  return body;
+}
+
+export function AdminPage() {
+  const [tab, setTab] = useState<Tab>("parameters");
+  const [state, setState] = useState<BlondinaState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [machineDraft, setMachineDraft] = useState<MachineDraft>(emptyMachine);
+  const [editingMachine, setEditingMachine] = useState(false);
+  const [parameterDraft, setParameterDraft] = useState<ParameterDraft>(emptyParameter);
+  const [editingParameter, setEditingParameter] = useState(false);
+  const [from, setFrom] = useState(() => localInputValue(new Date(Date.now() - 60 * 60_000)));
+  const [to, setTo] = useState(() => localInputValue(new Date()));
+  const [report, setReport] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
+  const [measurementMachine, setMeasurementMachine] = useState("");
+
+  async function reload(machineId = measurementMachine): Promise<void> {
+    const next = await request<BlondinaState>("/api/cps/state");
+    setState(next);
+    const rows = await request<MeasurementRow[]>(
+      `/api/cps/measurements?limit=30${machineId ? `&machineId=${encodeURIComponent(machineId)}` : ""}`,
+    );
+    setMeasurements(rows);
+  }
+
+  useEffect(() => {
+    void reload().catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : "Базата не отговаря.");
+    });
+    // The first load has no saved filter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function run(action: () => Promise<void>): Promise<void> {
+    setError(null);
+    try {
+      await action();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Заявката не мина.");
+    }
+  }
+
+  function editMachine(machine: MachineRow): void {
+    setEditingMachine(true);
+    setMachineDraft({
+      id: machine.id,
+      name: machine.name,
+      model: machine.model ?? "",
+      kind: machine.kind,
+    });
+    setTab("machines");
+  }
+
+  function editParameter(parameter: ParameterRow): void {
+    setEditingParameter(true);
+    setParameterDraft({
+      id: parameter.id,
+      label: parameter.label,
+      unit: parameter.unit,
+      rangeMin: parameter.rangeMin == null ? "" : String(parameter.rangeMin),
+      rangeMax: parameter.rangeMax == null ? "" : String(parameter.rangeMax),
+      sampleIntervalSeconds:
+        parameter.sampleIntervalSeconds == null ? "" : String(parameter.sampleIntervalSeconds),
+      machineIds: parameter.machineIds,
+    });
+    setTab("parameters");
+  }
+
+  const machineName = new Map(state?.machines.map((machine) => [machine.id, machine.name]));
+
+  return (
+    <main className="dash admin">
+      <header className="dash-header">
+        <div>
+          <p className="kicker">blondina</p>
+          <h1>Администрация</h1>
+        </div>
+      </header>
+      <p className="demo-note">
+        Базата е SQL Server <span className="admin-path">{state?.dbPath ?? "CPS_ATRA"}</span>.
+        Таблиците са <span className="admin-path">cps_machine</span>, <span className="admin-path">cps_parameter</span>,{" "}
+        <span className="admin-path">cps_machine_parameter</span> и <span className="admin-path">cps_measurement</span>.
+        Петият параметър не е именуван — добавя се оттук. Диапазонът и честотата не са цехови граници, докато не ги запишете.
+      </p>
+      {error && <p className="admin-error">{error}</p>}
+      <div className="admin-tabs" role="tablist">
+        <button type="button" aria-pressed={tab === "machines"} onClick={() => setTab("machines")}>Машини</button>
+        <button type="button" aria-pressed={tab === "parameters"} onClick={() => setTab("parameters")}>Параметри</button>
+        <button type="button" aria-pressed={tab === "generator"} onClick={() => setTab("generator")}>Генератор</button>
+      </div>
+
+      {tab === "machines" && (
+        <section className="admin-grid">
+          <form
+            className="admin-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(async () => {
+                await request(editingMachine ? "/api/cps/machines" : "/api/cps/machines", {
+                  method: editingMachine ? "PUT" : "POST",
+                  body: JSON.stringify({
+                    ...machineDraft,
+                    model: machineDraft.model.trim() || null,
+                  }),
+                });
+                setMachineDraft(emptyMachine);
+                setEditingMachine(false);
+                await reload();
+              });
+            }}
+          >
+            <h2>{editingMachine ? "Редакция на машина" : "Нова машина"}</h2>
+            <label>
+              Идентификатор
+              <input
+                value={machineDraft.id}
+                disabled={editingMachine}
+                onChange={(event) => setMachineDraft({ ...machineDraft, id: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Име
+              <input
+                value={machineDraft.name}
+                onChange={(event) => setMachineDraft({ ...machineDraft, name: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Модел
+              <input
+                value={machineDraft.model}
+                onChange={(event) => setMachineDraft({ ...machineDraft, model: event.target.value })}
+              />
+            </label>
+            <label>
+              Вид
+              <select
+                value={machineDraft.kind}
+                onChange={(event) =>
+                  setMachineDraft({ ...machineDraft, kind: event.target.value as MachineKind })
+                }
+              >
+                <option value="lathe">Струг</option>
+                <option value="other">Друга машина</option>
+              </select>
+            </label>
+            <div className="admin-actions">
+              <button type="submit" className="btn">{editingMachine ? "Запиши" : "Добави"}</button>
+              {editingMachine && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setEditingMachine(false);
+                    setMachineDraft(emptyMachine);
+                  }}
+                >
+                  Отказ
+                </button>
+              )}
+            </div>
+          </form>
+          <div className="admin-card">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Машина</th>
+                  <th>Вид</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state?.machines.map((machine) => (
+                  <tr key={machine.id}>
+                    <td>
+                      <strong>{machine.name}</strong>
+                      <div className="admin-muted">{machine.id}{machine.model ? ` · ${machine.model}` : ""}</div>
+                    </td>
+                    <td>{machine.kind === "lathe" ? "Струг" : "Друга"}</td>
+                    <td className="admin-actions">
+                      <button type="button" className="btn" onClick={() => editMachine(machine)}>Редакция</button>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          if (!window.confirm(`Да се изтрие ли ${machine.name}? Измерванията ѝ също се трият.`)) return;
+                          void run(async () => {
+                            await request(`/api/cps/machines?id=${encodeURIComponent(machine.id)}`, { method: "DELETE" });
+                            await reload();
+                          });
+                        }}
+                      >
+                        Изтрий
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {tab === "parameters" && (
+        <section className="admin-grid">
+          <form
+            className="admin-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(async () => {
+                await request("/api/cps/parameters", {
+                  method: editingParameter ? "PUT" : "POST",
+                  body: JSON.stringify({
+                    id: parameterDraft.id,
+                    label: parameterDraft.label,
+                    unit: parameterDraft.unit,
+                    rangeMin: optionalNumber(parameterDraft.rangeMin),
+                    rangeMax: optionalNumber(parameterDraft.rangeMax),
+                    sampleIntervalSeconds: optionalNumber(parameterDraft.sampleIntervalSeconds),
+                    machineIds: parameterDraft.machineIds,
+                  }),
+                });
+                setParameterDraft(emptyParameter);
+                setEditingParameter(false);
+                await reload();
+              });
+            }}
+          >
+            <h2>{editingParameter ? "Редакция на параметър" : "Нов параметър"}</h2>
+            <label>
+              Идентификатор
+              <input
+                value={parameterDraft.id}
+                disabled={editingParameter}
+                onChange={(event) => setParameterDraft({ ...parameterDraft, id: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Име
+              <input
+                value={parameterDraft.label}
+                onChange={(event) => setParameterDraft({ ...parameterDraft, label: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Единица
+              <input
+                value={parameterDraft.unit}
+                onChange={(event) => setParameterDraft({ ...parameterDraft, unit: event.target.value })}
+              />
+            </label>
+            <div className="admin-pair">
+              <label>
+                От
+                <input
+                  inputMode="decimal"
+                  value={parameterDraft.rangeMin}
+                  onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMin: event.target.value })}
+                />
+              </label>
+              <label>
+                До
+                <input
+                  inputMode="decimal"
+                  value={parameterDraft.rangeMax}
+                  onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMax: event.target.value })}
+                />
+              </label>
+            </div>
+            <label>
+              Честота, секунди
+              <input
+                inputMode="numeric"
+                value={parameterDraft.sampleIntervalSeconds}
+                onChange={(event) =>
+                  setParameterDraft({ ...parameterDraft, sampleIntervalSeconds: event.target.value })
+                }
+              />
+            </label>
+            <fieldset>
+              <legend>Машини</legend>
+              {state?.machines.map((machine) => (
+                <label key={machine.id} className="admin-check">
+                  <input
+                    type="checkbox"
+                    checked={parameterDraft.machineIds.includes(machine.id)}
+                    onChange={(event) => {
+                      const machineIds = event.target.checked
+                        ? [...parameterDraft.machineIds, machine.id]
+                        : parameterDraft.machineIds.filter((id) => id !== machine.id);
+                      setParameterDraft({ ...parameterDraft, machineIds });
+                    }}
+                  />
+                  {machine.name}
+                </label>
+              ))}
+            </fieldset>
+            <div className="admin-actions">
+              <button type="submit" className="btn">{editingParameter ? "Запиши" : "Добави"}</button>
+              {editingParameter && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setEditingParameter(false);
+                    setParameterDraft(emptyParameter);
+                  }}
+                >
+                  Отказ
+                </button>
+              )}
+            </div>
+          </form>
+          <div className="admin-card">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Параметър</th>
+                  <th>Диапазон</th>
+                  <th>Честота</th>
+                  <th>Машини</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state?.parameters.map((parameter) => (
+                  <tr key={parameter.id}>
+                    <td>
+                      <strong>{parameter.label}</strong>
+                      <div className="admin-muted">{parameter.id}{parameter.unit ? ` · ${parameter.unit}` : ""}</div>
+                    </td>
+                    <td>
+                      {parameter.rangeMin == null || parameter.rangeMax == null
+                        ? "не е зададен"
+                        : `${parameter.rangeMin} – ${parameter.rangeMax}`}
+                    </td>
+                    <td>{parameter.sampleIntervalSeconds == null ? "—" : `${parameter.sampleIntervalSeconds} сек`}</td>
+                    <td>{parameter.machineIds.map((id) => machineName.get(id) ?? id).join(", ")}</td>
+                    <td className="admin-actions">
+                      <button type="button" className="btn" onClick={() => editParameter(parameter)}>Редакция</button>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          if (!window.confirm(`Да се изтрие ли ${parameter.label}?`)) return;
+                          void run(async () => {
+                            await request(`/api/cps/parameters?id=${encodeURIComponent(parameter.id)}`, {
+                              method: "DELETE",
+                            });
+                            await reload();
+                          });
+                        }}
+                      >
+                        Изтрий
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {tab === "generator" && (
+        <section className="admin-stack">
+          <form
+            className="admin-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(async () => {
+                const result = await request<GenerateResult>("/api/cps/generate", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    from: new Date(from).toISOString(),
+                    to: new Date(to).toISOString(),
+                  }),
+                });
+                const skippedParameters = new Set(result.skipped.map((item) => item.parameterId)).size;
+                setReport(
+                  result.inserted === 0
+                    ? "Няма записани редове. Попълнете диапазон и честота на параметрите, които искате да генерирате."
+                    : `Записани ${result.inserted} измервания. Пропуснати серии: ${result.skipped.length}, от ${skippedParameters} параметъра без диапазон или честота.`,
+                );
+                await reload();
+              });
+            }}
+          >
+            <h2>Генератор на измервания</h2>
+            <p className="admin-muted">
+              За всяка машина и параметър с диапазон и честота се записват стойности вътре в диапазона.
+              Няма производствена формула. Липсващ диапазон не се заменя с нула.
+            </p>
+            <div className="admin-pair">
+              <label>
+                От
+                <input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} required />
+              </label>
+              <label>
+                До
+                <input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} required />
+              </label>
+            </div>
+            <div className="admin-actions">
+              <button type="submit" className="btn">Генерирай</button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (!window.confirm("Да се изтрият ли всички измервания?")) return;
+                  void run(async () => {
+                    await request("/api/cps/measurements", { method: "DELETE" });
+                    setReport("Измерванията са изчистени.");
+                    await reload();
+                  });
+                }}
+              >
+                Изчисти измерванията
+              </button>
+            </div>
+            {report && <p>{report}</p>}
+            <p className="admin-muted">Записи в базата: {state?.measurementCount ?? 0}</p>
+          </form>
+          <div className="admin-card">
+            <div className="admin-toolbar">
+              <h2>Последни измервания</h2>
+              <label>
+                Машина
+                <select
+                  value={measurementMachine}
+                  onChange={(event) => {
+                    const machineId = event.target.value;
+                    setMeasurementMachine(machineId);
+                    void run(() => reload(machineId));
+                  }}
+                >
+                  <option value="">Всички</option>
+                  {state?.machines.map((machine) => (
+                    <option key={machine.id} value={machine.id}>{machine.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Време</th>
+                  <th>Машина</th>
+                  <th>Параметър</th>
+                  <th>Стойност</th>
+                </tr>
+              </thead>
+              <tbody>
+                {measurements.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="admin-muted">Няма измервания.</td>
+                  </tr>
+                )}
+                {measurements.map((row) => (
+                  <tr key={`${row.machineId}-${row.parameterId}-${row.measuredAt}`}>
+                    <td>{new Date(row.measuredAt).toLocaleString("bg-BG")}</td>
+                    <td>{row.machineName}</td>
+                    <td>{row.parameterLabel}</td>
+                    <td>{row.value == null ? "—" : `${row.value} ${row.unit}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}

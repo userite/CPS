@@ -1,0 +1,290 @@
+.mc-card {
+  --status-color: var(--status-unknown);
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 0.95rem 1rem 0.8rem;
+  box-shadow: var(--shadow);
+  text-align: left;
+  color: inherit;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.mc-card[data-status="running"] { --status-color: var(--status-running); }
+.mc-card[data-status="idle"] { --status-color: var(--status-idle); }
+.mc-card[data-status="setup"] { --status-color: var(--status-setup); }
+.mc-card[data-status="warning"] { --status-color: var(--status-warning); }
+.mc-card[data-status="alarm"] { --status-color: var(--status-alarm); }
+.mc-card[data-status="offline"] { --status-color: var(--status-offline); }
+.mc-card[data-status="unknown"] { --status-color: var(--status-unknown); }
+
+.mc-card[data-status="alarm"] {
+  box-shadow: var(--shadow), inset 3px 0 0 var(--status-alarm);
+}
+
+.mc-card[data-status="warning"] {
+  box-shadow: var(--shadow), inset 3px 0 0 var(--status-warning);
+}
+
+.mc-card.is-interactive { cursor: pointer; }
+
+.mc-card.is-interactive:hover {
+  border-color: var(--card-border-hover);
+  background: var(--card-hover);
+}
+
+.mc-card.is-selected {
+  border-color: var(--focus);
+  box-shadow: var(--shadow), 0 0 0 1px var(--focus);
+}
+
+.mc-card.is-selected[data-status="alarm"] {
+  box-shadow: var(--shadow), 0 0 0 1px var(--focus), inset 3px 0 0 var(--status-alarm);
+}
+
+.mc-card.is-selected[data-status="warning"] {
+  box-shadow: var(--shadow), 0 0 0 1px var(--focus), inset 3px 0 0 var(--status-warning);
+}
+
+.mc-card:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.mc-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.mc-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: #101820;
+  color: var(--text);
+}
+
+.mc-icon svg { width: 1.45rem; height: 1.45rem; }
+
+.mc-name {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+
+.mc-model, .mc-code, .mc-status, .mc-alert, .mc-foot, .mc-loading-label {
+  margin: 0;
+}
+
+.mc-model {
+  min-height: 1.2em;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  overflow-wrap: break-word;
+}
+
+.mc-code {
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.mc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  margin-top: 0.45rem;
+  padding: 0.16rem 0.55rem 0.16rem 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-color) 18%, transparent);
+  color: var(--status-color);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.mc-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mc-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  color: var(--status-color);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.mc-alert-icon { width: 0.95rem; height: 0.95rem; flex: none; }
+
+.mc-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  margin-top: 0.9rem;
+}
+
+.oee {
+  position: relative;
+  width: 4.75rem;
+  height: 4.75rem;
+  flex: none;
+}
+
+.oee svg { width: 100%; height: 100%; }
+
+.oee-track {
+  fill: none;
+  stroke: var(--oee-track);
+  stroke-width: 6;
+}
+
+.oee-arc {
+  fill: none;
+  stroke: var(--oee-arc);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.oee-arc-good { stroke: var(--status-running); }
+.oee-arc-warn { stroke: var(--status-setup); }
+.oee-arc-bad { stroke: var(--status-alarm); }
+
+.oee-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.spark { min-width: 0; }
+
+.spark-caption {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.spark-svg {
+  display: block;
+  width: 100%;
+  height: 3.1rem;
+  margin-top: 0.25rem;
+}
+
+.spark-svg-large { height: 7.5rem; }
+
+.spark-line {
+  fill: none;
+  stroke: var(--spark-line);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-line-dot { fill: var(--spark-line); }
+.spark-peak { fill: var(--spark-peak); }
+.spark-breach { fill: var(--spark-breach); }
+.spark-last {
+  fill: var(--spark-last);
+  stroke: var(--spark-line);
+  stroke-width: 0.6;
+}
+.spark-hit { fill: transparent; }
+
+.spark-window, .spark-readout {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spark-empty {
+  display: grid;
+  place-items: center;
+  height: 3.1rem;
+  margin: 0.35rem 0 0;
+  border: 1px dashed var(--card-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.spark-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.mark-peak, .mark-breach {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.28rem;
+  vertical-align: -0.05rem;
+}
+
+.mark-peak {
+  background: var(--spark-peak);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.mark-breach { background: var(--spark-breach); }
+
+.mc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.mc-stale {
+  color: var(--status-warning);
+  font-weight: 700;
+}
+
+.mc-loading-label { font-weight: 650; }
+
+.mc-skel {
+  height: 0.75rem;
+  margin-top: 0.7rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #243140, #334556, #243140);
+  background-size: 200% 100%;
+  animation: mc-shimmer 1.4s ease infinite;
+}
+
+.mc-skel-short { width: 45%; }
+.mc-skel-chart { height: 4.2rem; border-radius: 10px; }
+
+@keyframes mc-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
