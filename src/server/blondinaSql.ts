@@ -9,6 +9,7 @@ import {
   requireName,
   text,
   type AsyncBlondina,
+  type DashboardReading,
   type FirstObjectReading,
   type GenerateResult,
   type MachineInput,
@@ -569,6 +570,65 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
           model: machine.model == null ? null : String(machine.model),
         },
         charts,
+      };
+    },
+    async readDashboard(windowMs: number): Promise<DashboardReading> {
+      const machines = await pool.request().query<MachineRecord>(`
+        SELECT id, name, model, kind, created_at AS createdAt
+        FROM dbo.cps_machine
+        ORDER BY name
+      `);
+      const links = await pool.request().query<{
+        machineId: string;
+        parameterId: string;
+        label: string;
+        unit: string | null;
+        rangeMin: number | null;
+        rangeMax: number | null;
+      }>(`
+        SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
+               p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax
+        FROM dbo.cps_machine_parameter mp
+        JOIN dbo.cps_parameter p ON p.id = mp.parameter_id
+        ORDER BY p.label
+      `);
+      const since = new Date(Date.now() - windowMs);
+      const samples = await pool
+        .request()
+        .input("since", sql.DateTime2, since)
+        .query<{
+          machineId: string;
+          parameterId: string;
+          measuredAt: Date | string;
+          value: number | null;
+        }>(`
+          SELECT machine_id AS machineId, parameter_id AS parameterId,
+                 measured_at AS measuredAt, value
+          FROM dbo.cps_measurement
+          WHERE measured_at >= @since
+          ORDER BY measured_at ASC
+        `);
+      return {
+        machines: machines.recordset.map((machine) => ({
+          id: String(machine.id),
+          name: String(machine.name),
+          model: machine.model == null ? null : String(machine.model),
+          series: links.recordset
+            .filter((link) => link.machineId === machine.id)
+            .map((link) => ({
+              parameterId: String(link.parameterId),
+              label: String(link.label),
+              unit: String(link.unit ?? ""),
+              rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
+              rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
+              points: samples.recordset
+                .filter((sample) => sample.machineId === machine.id && sample.parameterId === link.parameterId)
+                .map((sample) => ({
+                  timestamp: iso(sample.measuredAt),
+                  value: sample.value == null ? null : Number(sample.value),
+                })),
+            })),
+        })),
       };
     },
     async clearMeasurements() {

@@ -80,6 +80,26 @@ export type FirstObjectReading = {
   charts: ChartSeries[];
 };
 
+export type DashboardSeries = {
+  parameterId: string;
+  label: string;
+  unit: string;
+  rangeMin: number | null;
+  rangeMax: number | null;
+  points: Array<{ timestamp: string; value: number | null }>;
+};
+
+export type DashboardMachine = {
+  id: string;
+  name: string;
+  model: string | null;
+  series: DashboardSeries[];
+};
+
+export type DashboardReading = {
+  machines: DashboardMachine[];
+};
+
 export type Blondina = {
   kind: "sqlite" | "sqlserver";
   path: string;
@@ -93,6 +113,7 @@ export type Blondina = {
   generate: (input: { from: string; to: string }, random?: () => number) => GenerateResult;
   appendDueSamples: (now?: Date, random?: () => number) => number;
   readFirstObject: (windowMs: number) => FirstObjectReading;
+  readDashboard: (windowMs: number) => DashboardReading;
   clearMeasurements: () => number;
   listMeasurements: (filter?: { machineId?: string; limit?: number }) => MeasurementRow[];
   close: () => void;
@@ -547,6 +568,52 @@ export function openBlondina(dbPath: string): Blondina {
             timestamp: String(point.timestamp),
             value: point.value == null ? null : Number(point.value),
           })),
+        })),
+      };
+    },
+    readDashboard(windowMs) {
+      const machines = db.prepare("SELECT id, name, model FROM cps_machine ORDER BY name").all();
+      const links = db
+        .prepare(
+          `SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
+                  p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax
+           FROM cps_machine_parameter mp
+           JOIN cps_parameter p ON p.id = mp.parameter_id
+           ORDER BY p.label`,
+        )
+        .all();
+      const since = new Date(Date.now() - windowMs).toISOString();
+      const samples = db
+        .prepare(
+          `SELECT machine_id AS machineId, parameter_id AS parameterId,
+                  measured_at AS timestamp, value
+           FROM cps_measurement
+           WHERE measured_at >= ?
+           ORDER BY measured_at ASC`,
+        )
+        .all(since);
+      return {
+        machines: machines.map((machine) => ({
+          id: String(machine.id),
+          name: String(machine.name),
+          model: machine.model == null ? null : String(machine.model),
+          series: links
+            .filter((link) => link.machineId === machine.id)
+            .map((link) => ({
+              parameterId: String(link.parameterId),
+              label: String(link.label),
+              unit: String(link.unit ?? ""),
+              rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
+              rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
+              points: samples
+                .filter(
+                  (sample) => sample.machineId === machine.id && sample.parameterId === link.parameterId,
+                )
+                .map((sample) => ({
+                  timestamp: String(sample.timestamp),
+                  value: sample.value == null ? null : Number(sample.value),
+                })),
+            })),
         })),
       };
     },

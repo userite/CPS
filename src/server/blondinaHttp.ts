@@ -49,6 +49,12 @@ export async function handleBlondinaRequest(
       send(res, 200, await db.getState());
       return true;
     }
+    if (req.method === "GET" && url.pathname === "/api/cps/dashboard") {
+      const minutes = Number(url.searchParams.get("minutes") ?? 60);
+      const windowMs = (Number.isFinite(minutes) && minutes > 0 ? minutes : 60) * 60_000;
+      send(res, 200, await db.readDashboard(windowMs));
+      return true;
+    }
     if (req.method === "GET" && url.pathname === "/api/cps/object") {
       const minutes = Number(url.searchParams.get("minutes") ?? 60);
       const windowMs = (Number.isFinite(minutes) && minutes > 0 ? minutes : 60) * 60_000;

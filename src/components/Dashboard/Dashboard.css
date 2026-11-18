@@ -143,6 +143,146 @@
   font-size: 0.82rem;
 }
 
+.app-shell-fit .dash {
+  max-width: none;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  padding: 0.45rem 1rem 0.7rem;
+}
+
+.app-shell-fit .dash-header {
+  padding-bottom: 0.45rem;
+}
+
+.app-shell-fit .dash-header h1 {
+  font-size: 1.25rem;
+}
+
+.app-shell-fit .demo-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+}
+
+.trend-list {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.6rem;
+}
+
+.trend-card {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 20rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.65rem 0.5rem;
+}
+
+.trend-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.trend-head p {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.trend-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 7.2rem;
+  aspect-ratio: 100 / 36;
+  margin-top: 0.35rem;
+}
+
+.trend-guide {
+  stroke: var(--card-border);
+  stroke-width: 0.35;
+}
+
+.trend-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.trend-empty {
+  margin: 0.8rem 0 0.2rem;
+  color: var(--text-muted);
+}
+
+.trend-scale {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.trend-readout {
+  margin: 0.35rem 0 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+
+.trend-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trend-legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.trend-legend i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.trend-legend-value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 800px) {
   .chart-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .app-shell-fit .dash {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .trend-list {
+    flex-direction: column;
+  }
+
+  .trend-card {
+    flex: none;
+    width: 100%;
+    max-width: none;
+  }
 }

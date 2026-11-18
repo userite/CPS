@@ -7,7 +7,7 @@ type View = "dashboard" | "admin";
 export function App() {
   const [view, setView] = useState<View>("dashboard");
   return (
-    <>
+    <div className={view === "dashboard" ? "app-shell app-shell-fit" : "app-shell"}>
       <nav className="app-nav">
         <button type="button" aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>
           Пулт
@@ -17,6 +17,6 @@ export function App() {
         </button>
       </nav>
       {view === "dashboard" ? <Dashboard /> : <AdminPage />}
-    </>
+    </div>
   );
 }

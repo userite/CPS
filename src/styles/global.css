@@ -13,12 +13,26 @@ body {
 
 button, input, select { font: inherit; }
 
+.app-shell-fit {
+  height: 100vh;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
 .app-nav {
   display: flex;
   gap: 0.45rem;
   max-width: 1240px;
   margin: 0 auto;
   padding: 0.85rem 1.25rem 0;
+}
+
+.app-shell-fit .app-nav {
+  max-width: none;
+  flex: none;
+  padding: 0.5rem 1rem 0;
 }
 
 .app-nav button {
@@ -33,6 +47,13 @@ button, input, select { font: inherit; }
 .app-nav button[aria-pressed="true"] {
   border-color: var(--focus);
   color: var(--focus);
+}
+
+@media (max-width: 720px) {
+  .app-shell-fit {
+    height: auto;
+    overflow: visible;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

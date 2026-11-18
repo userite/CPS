@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { chartWindowMinutes, readerIntervalMs } from "../../config/dashboard";
-import { formatNumber } from "../../domain/format";
-import type { FirstObjectReading } from "../../server/blondina";
-import { Sparkline } from "../MachineCard/Sparkline";
+import type { DashboardReading } from "../../server/blondina";
+import { MachineTrend } from "./MachineTrend";
 import "./Dashboard.css";
 
 export function Dashboard() {
-  const [reading, setReading] = useState<FirstObjectReading | null>(null);
+  const [reading, setReading] = useState<DashboardReading | null>(null);
   const [readAt, setReadAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,9 +13,9 @@ export function Dashboard() {
     let alive = true;
     const load = async () => {
       try {
-        const response = await fetch(`/api/cps/object?minutes=${chartWindowMinutes}`);
-        if (!response.ok) throw new Error("Четенето от blondina не мина.");
-        const body = (await response.json()) as FirstObjectReading;
+        const response = await fetch(`/api/cps/dashboard?minutes=${chartWindowMinutes}`);
+        if (!response.ok) throw new Error("Четенето от базата не мина.");
+        const body = (await response.json()) as DashboardReading;
         if (!alive) return;
         setReading(body);
         setReadAt(new Date());
@@ -37,14 +36,14 @@ export function Dashboard() {
   const readLabel = readAt
     ? new Intl.DateTimeFormat("bg-BG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(readAt)
     : null;
+  const orderedIds = [...new Set(reading?.machines.flatMap((machine) => machine.series.map((series) => series.parameterId)) ?? [])].sort();
 
   return (
     <main className="dash">
       <header className="dash-header">
         <div>
-          <p className="kicker">Първи обект</p>
-          <h1>{reading?.machine?.name ?? "Контролен пулт"}</h1>
-          {reading?.machine?.model && <p className="demo-note">{reading.machine.model}</p>}
+          <p className="kicker">Пулт</p>
+          <h1>Контролен пулт</h1>
         </div>
         <div className="dash-side">
           <span>{`Четене на всеки ${readerIntervalMs / 1000} сек`}</span>
@@ -52,28 +51,13 @@ export function Dashboard() {
         </div>
       </header>
       <p className="demo-note">
-        Записът в blondina върви отделно и добавя точка, когато мине честотата на параметъра.
-        Този екран само чете и пречертава четирите графики.
+        Всяка линия е процент от границите на своя параметър. 0% е долната граница, 100% е горната.
       </p>
       {error && <p className="dash-error">{error}</p>}
-      <section className="chart-grid">
-        {reading?.charts.map((chart) => {
-          const last = [...chart.points].reverse().find((point) => point.value != null);
-          return (
-            <article key={chart.parameterId} className="chart-card">
-              <header className="chart-head">
-                <h2>{chart.label}</h2>
-                <p className="chart-value">
-                  {last?.value == null ? "—" : `${formatNumber(last.value)} ${chart.unit}`}
-                </p>
-              </header>
-              <Sparkline points={chart.points} label={chart.label} unit={chart.unit} size="large" />
-              {!chart.writable && (
-                <p className="chart-note">Няма диапазон или честота. Записът пропуска тази графика.</p>
-              )}
-            </article>
-          );
-        })}
+      <section className="trend-list" aria-label="Графики по машини">
+        {reading?.machines.map((machine) => (
+          <MachineTrend key={machine.id} machine={machine} orderedIds={orderedIds} />
+        ))}
       </section>
     </main>
   );
