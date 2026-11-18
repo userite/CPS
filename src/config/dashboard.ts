@@ -18,5 +18,5 @@ export const oeeColorThresholds: OeeColorThresholds = {
 /** How often the screen re-reads blondina. The plant has not set this interval. */
 export const readerIntervalMs = 5_000;
 
-/** How much history each chart asks for. */
-export const chartWindowMinutes = 60;
+/** Half a shift. Each chart asks for this much history. */
+export const chartWindowMinutes = 4 * 60;

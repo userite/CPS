@@ -185,25 +185,67 @@
   padding: 0.55rem 0.65rem 0.5rem;
 }
 
-.trend-head h2 {
+.trend-head h2,
+.trend-head p {
   margin: 0;
-  font-size: 0.92rem;
   line-height: 1.25;
+  min-height: 1.25em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trend-head h2 {
+  font-size: 0.92rem;
 }
 
 .trend-head p {
-  margin: 0.15rem 0 0;
+  margin-top: 0.15rem;
   color: var(--text-muted);
   font-size: 0.85rem;
 }
 
+.trend-plot {
+  display: grid;
+  grid-template-columns: 2.15rem minmax(0, 1fr);
+  column-gap: 0.2rem;
+  margin-top: 0.35rem;
+}
+
+.trend-yaxis {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.trend-yaxis span {
+  position: absolute;
+  right: 0;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
 .trend-svg {
   display: block;
+  grid-column: 2;
+  grid-row: 1;
   width: 100%;
   height: auto;
   max-height: 7.2rem;
   aspect-ratio: 100 / 36;
-  margin-top: 0.35rem;
+  margin-top: 0;
+}
+
+.trend-time {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  margin: 0.12rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .trend-guide {
@@ -221,25 +263,17 @@
   color: var(--text-muted);
 }
 
-.trend-scale {
-  display: flex;
-  justify-content: space-between;
-  margin: 0.15rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
 .trend-readout {
-  margin: 0.35rem 0 0;
+  margin: 0.15rem 0 0;
   font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+  font-size: 0.68rem;
 }
 
 .trend-legend {
   display: flex;
   flex-direction: column;
-  gap: 0.12rem;
-  margin: 0.35rem 0 0;
+  gap: 0.04rem;
+  margin: 0.2rem 0 0;
   padding: 0;
   list-style: none;
 }
@@ -247,16 +281,16 @@
 .trend-legend li {
   display: flex;
   align-items: baseline;
-  gap: 0.35rem;
+  gap: 0.22rem;
   min-width: 0;
-  font-size: 0.75rem;
-  line-height: 1.25;
+  font-size: 0.62rem;
+  line-height: 1.15;
 }
 
 .trend-legend i {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 2px;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 1px;
   flex: 0 0 auto;
 }
 

@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import sql, { type ConnectionPool, type IResult, type Transaction } from "mssql";
 import {
   BlondinaInputError,
+  nextGeneratedValue,
+  normalizeColor,
   normalizeRange,
   numberOrNull,
   requireId,
@@ -74,6 +76,7 @@ type ParameterRecord = {
   rangeMin: number | null;
   rangeMax: number | null;
   sampleIntervalSeconds: number | null;
+  color: string | null;
 };
 
 type LinkRecord = {
@@ -193,6 +196,10 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
     const safe = config.password && message.includes(config.password) ? "" : message;
     throw new Error(`Няма връзка към ${label}.${safe ? ` ${safe}` : ""}`);
   }
+  await pool.request().query(`
+    IF COL_LENGTH('dbo.cps_parameter', 'color') IS NULL
+      ALTER TABLE dbo.cps_parameter ADD color nvarchar(7) NULL
+  `);
 
   const listMachines = async (): Promise<MachineRow[]> => {
     const result = await pool.request().query<MachineRecord>(`
@@ -212,7 +219,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
   const listParameters = async (): Promise<ParameterRow[]> => {
     const parameters = await pool.request().query<ParameterRecord>(`
       SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
-             sample_interval_seconds AS sampleIntervalSeconds
+             sample_interval_seconds AS sampleIntervalSeconds, color
       FROM dbo.cps_parameter
       ORDER BY label
     `);
@@ -227,6 +234,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
       rangeMin: row.rangeMin == null ? null : Number(row.rangeMin),
       rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
       sampleIntervalSeconds: row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
+      color: row.color == null ? null : String(row.color),
       machineIds: links.recordset
         .filter((link) => link.parameterId === row.id)
         .map((link) => String(link.machineId)),
@@ -337,6 +345,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         throw new BlondinaInputError("Вече има параметър с този идентификатор.");
       }
       const links = await machineIds(input.machineIds);
+      const color = normalizeColor(input.color);
       try {
         await withTransaction(pool, async (tx) => {
           await new sql.Request(tx)
@@ -346,10 +355,11 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
             .input("rangeMin", sql.Float, range.rangeMin)
             .input("rangeMax", sql.Float, range.rangeMax)
             .input("sampleIntervalSeconds", sql.Int, range.sampleIntervalSeconds)
+            .input("color", sql.NVarChar(7), color)
             .query(`
               INSERT INTO dbo.cps_parameter
-                (id, label, unit, range_min, range_max, sample_interval_seconds)
-              VALUES (@id, @label, @unit, @rangeMin, @rangeMax, @sampleIntervalSeconds)
+                (id, label, unit, range_min, range_max, sample_interval_seconds, color)
+              VALUES (@id, @label, @unit, @rangeMin, @rangeMax, @sampleIntervalSeconds, @color)
             `);
           await replaceLinks(tx, id, links);
         });
@@ -375,6 +385,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         .query("SELECT id FROM dbo.cps_parameter WHERE id = @id");
       if (existing.recordset.length === 0) throw new BlondinaInputError("Няма такъв параметър.");
       const links = await machineIds(input.machineIds);
+      const color = normalizeColor(input.color);
       await withTransaction(pool, async (tx) => {
         await new sql.Request(tx)
           .input("label", sql.NVarChar(200), labelText)
@@ -382,11 +393,12 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
           .input("rangeMin", sql.Float, range.rangeMin)
           .input("rangeMax", sql.Float, range.rangeMax)
           .input("sampleIntervalSeconds", sql.Int, range.sampleIntervalSeconds)
+          .input("color", sql.NVarChar(7), color)
           .input("id", sql.NVarChar(64), id)
           .query(`
             UPDATE dbo.cps_parameter
               SET label = @label, unit = @unit, range_min = @rangeMin, range_max = @rangeMax,
-                  sample_interval_seconds = @sampleIntervalSeconds
+                  sample_interval_seconds = @sampleIntervalSeconds, color = @color
             WHERE id = @id
           `);
         await replaceLinks(tx, id, links);
@@ -452,7 +464,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         const span = item.rangeMax - item.rangeMin;
         let current = item.rangeMin + random() * span;
         for (let time = fromMs; time <= toMs; time += item.stepMs) {
-          current = Math.min(item.rangeMax, Math.max(item.rangeMin, current + (random() - 0.5) * span * 0.2));
+          current = nextGeneratedValue(current, item.rangeMin, item.rangeMax, random);
           const value = span === 0 ? item.rangeMin : Math.round(current * 1000) / 1000;
           pending.push({
             machineId: item.machineId,
@@ -502,7 +514,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         const rangeMax = Number(row.rangeMax);
         const span = rangeMax - rangeMin;
         const previousValue = previous && previous.value != null ? Number(previous.value) : rangeMin + random() * span;
-        const next = Math.min(rangeMax, Math.max(rangeMin, previousValue + (random() - 0.5) * span * 0.2));
+        const next = nextGeneratedValue(previousValue, rangeMin, rangeMax, random);
         const value = span === 0 ? rangeMin : Math.round(next * 1000) / 1000;
         pending.push({
           machineId: String(row.machineId),
@@ -585,9 +597,10 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         unit: string | null;
         rangeMin: number | null;
         rangeMax: number | null;
+        color: string | null;
       }>(`
         SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
-               p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax
+               p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax, p.color AS color
         FROM dbo.cps_machine_parameter mp
         JOIN dbo.cps_parameter p ON p.id = mp.parameter_id
         ORDER BY p.label
@@ -621,6 +634,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
               unit: String(link.unit ?? ""),
               rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
               rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
+              color: link.color == null ? null : String(link.color),
               points: samples.recordset
                 .filter((sample) => sample.machineId === machine.id && sample.parameterId === link.parameterId)
                 .map((sample) => ({

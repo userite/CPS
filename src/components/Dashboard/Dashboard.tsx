@@ -51,7 +51,7 @@ export function Dashboard() {
         </div>
       </header>
       <p className="demo-note">
-        Всяка линия е процент от границите на своя параметър. 0% е долната граница, 100% е горната.
+        Всяка линия е процент от границите на своя параметър. По вертикала 0% е долната граница, а 100% е горната. По хоризонтала е времето.
       </p>
       {error && <p className="dash-error">{error}</p>}
       <section className="trend-list" aria-label="Графики по машини">

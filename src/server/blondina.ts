@@ -24,6 +24,7 @@ export type ParameterInput = {
   rangeMin?: number | null;
   rangeMax?: number | null;
   sampleIntervalSeconds?: number | null;
+  color?: string | null;
   machineIds: string[];
 };
 
@@ -42,6 +43,7 @@ export type ParameterRow = {
   rangeMin: number | null;
   rangeMax: number | null;
   sampleIntervalSeconds: number | null;
+  color: string | null;
   machineIds: string[];
 };
 
@@ -86,6 +88,7 @@ export type DashboardSeries = {
   unit: string;
   rangeMin: number | null;
   rangeMax: number | null;
+  color: string | null;
   points: Array<{ timestamp: string; value: number | null }>;
 };
 
@@ -197,6 +200,26 @@ export function normalizeRange(min: number | null, max: number | null, interval:
   return { rangeMin: min, rangeMax: max, sampleIntervalSeconds: interval };
 }
 
+const COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
+
+export function normalizeColor(value: unknown): string | null {
+  if (value == null) return null;
+  const color = String(value).trim();
+  if (!color) return null;
+  if (!COLOR_PATTERN.test(color)) {
+    throw new BlondinaInputError("Цветът се записва като #929292.");
+  }
+  return color.toLowerCase();
+}
+
+export function nextGeneratedValue(current: number, min: number, max: number, random: () => number): number {
+  const span = max - min;
+  if (span === 0) return min;
+  const step = current + (random() - 0.5) * span * 0.35;
+  const slack = span * 0.2;
+  return Math.min(max + slack, Math.max(min - slack, step));
+}
+
 function machineIds(db: DatabaseSync, ids: string[]): string[] {
   const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
   for (const id of unique) {
@@ -235,10 +258,17 @@ function seed(db: DatabaseSync): void {
   }
 }
 
+function ensureColorColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(cps_parameter)").all();
+  if (columns.some((column) => column.name === "color")) return;
+  db.exec("ALTER TABLE cps_parameter ADD COLUMN color TEXT");
+}
+
 export function openBlondina(dbPath: string): Blondina {
   const db = new DatabaseSync(dbPath);
   db.exec(schemaSql());
   db.exec("PRAGMA foreign_keys = ON");
+  ensureColorColumn(db);
   seed(db);
 
   const listMachines = (): MachineRow[] =>
@@ -261,7 +291,7 @@ export function openBlondina(dbPath: string): Blondina {
     const parameters = db
       .prepare(
         `SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
-                sample_interval_seconds AS sampleIntervalSeconds
+                sample_interval_seconds AS sampleIntervalSeconds, color
          FROM cps_parameter
          ORDER BY label`,
       )
@@ -277,6 +307,7 @@ export function openBlondina(dbPath: string): Blondina {
       rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
       sampleIntervalSeconds:
         row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
+      color: row.color == null ? null : String(row.color),
       machineIds: links
         .filter((link) => link.parameterId === row.id)
         .map((link) => String(link.machineId)),
@@ -338,12 +369,13 @@ export function openBlondina(dbPath: string): Blondina {
         throw new BlondinaInputError("Вече има параметър с този идентификатор.");
       }
       const links = machineIds(db, input.machineIds);
+      const color = normalizeColor(input.color);
       db.exec("BEGIN");
       try {
         db.prepare(
           `INSERT INTO cps_parameter
-             (id, label, unit, range_min, range_max, sample_interval_seconds)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+             (id, label, unit, range_min, range_max, sample_interval_seconds, color)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           label,
@@ -351,6 +383,7 @@ export function openBlondina(dbPath: string): Blondina {
           range.rangeMin,
           range.rangeMax,
           range.sampleIntervalSeconds,
+          color,
         );
         replaceLinks(db, id, links);
         db.exec("COMMIT");
@@ -371,11 +404,12 @@ export function openBlondina(dbPath: string): Blondina {
         throw new BlondinaInputError("Няма такъв параметър.");
       }
       const links = machineIds(db, input.machineIds);
+      const color = normalizeColor(input.color);
       db.exec("BEGIN");
       try {
         db.prepare(
           `UPDATE cps_parameter
-             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?
+             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?, color = ?
            WHERE id = ?`,
         ).run(
           label,
@@ -383,6 +417,7 @@ export function openBlondina(dbPath: string): Blondina {
           range.rangeMin,
           range.rangeMax,
           range.sampleIntervalSeconds,
+          color,
           id,
         );
         replaceLinks(db, id, links);
@@ -463,7 +498,7 @@ export function openBlondina(dbPath: string): Blondina {
           const span = item.rangeMax - item.rangeMin;
           let current = item.rangeMin + random() * span;
           for (let time = fromMs; time <= toMs; time += item.stepMs) {
-            current = Math.min(item.rangeMax, Math.max(item.rangeMin, current + (random() - 0.5) * span * 0.2));
+            current = nextGeneratedValue(current, item.rangeMin, item.rangeMax, random);
             const value = span === 0 ? item.rangeMin : Math.round(current * 1000) / 1000;
             insert.run(item.machineId, item.parameterId, new Date(time).toISOString(), value);
             inserted += 1;
@@ -514,7 +549,7 @@ export function openBlondina(dbPath: string): Blondina {
           const rangeMax = Number(row.rangeMax);
           const span = rangeMax - rangeMin;
           const previous = last && last.value != null ? Number(last.value) : rangeMin + random() * span;
-          const next = Math.min(rangeMax, Math.max(rangeMin, previous + (random() - 0.5) * span * 0.2));
+          const next = nextGeneratedValue(previous, rangeMin, rangeMax, random);
           const value = span === 0 ? rangeMin : Math.round(next * 1000) / 1000;
           insert.run(String(row.machineId), String(row.parameterId), now.toISOString(), value);
           inserted += 1;
@@ -576,7 +611,7 @@ export function openBlondina(dbPath: string): Blondina {
       const links = db
         .prepare(
           `SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
-                  p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax
+                  p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax, p.color AS color
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
            ORDER BY p.label`,
@@ -605,6 +640,7 @@ export function openBlondina(dbPath: string): Blondina {
               unit: String(link.unit ?? ""),
               rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
               rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
+              color: link.color == null ? null : String(link.color),
               points: samples
                 .filter(
                   (sample) => sample.machineId === machine.id && sample.parameterId === link.parameterId,

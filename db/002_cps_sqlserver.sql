@@ -42,6 +42,7 @@ BEGIN
     range_min                FLOAT         NULL,
     range_max                FLOAT         NULL,
     sample_interval_seconds  INT           NULL,
+    color                    NVARCHAR(7)   NULL,
     CONSTRAINT CK_cps_parameter_interval CHECK (
       sample_interval_seconds IS NULL OR sample_interval_seconds > 0
     ),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BlondinaInputError, openBlondina } from "./blondina";
+import { BlondinaInputError, nextGeneratedValue, normalizeColor, openBlondina } from "./blondina";
 
 describe("blondina", () => {
   it("seeds four machines and four parameters without ranges", () => {
@@ -19,7 +19,7 @@ describe("blondina", () => {
     db.close();
   });
 
-  it("skips generation until a range and frequency exist, then stays inside the range", () => {
+  it("skips generation until a range and frequency exist", () => {
     const db = openBlondina(":memory:");
     const period = { from: "2026-10-30T10:00:00.000Z", to: "2026-10-30T10:10:00.000Z" };
     const skipped = db.generate(period, () => 0.5);
@@ -43,6 +43,11 @@ describe("blondina", () => {
     const rows = db.listMeasurements({ machineId: "LATHE_01", limit: 20 });
     expect(rows).toHaveLength(11);
     expect(rows.every((row) => row.value === 500)).toBe(true);
+
+    db.generate(period, () => 0);
+    const outside = db.listMeasurements({ machineId: "LATHE_01", limit: 20 });
+    expect(outside.some((row) => row.value != null && row.value < 0)).toBe(true);
+    expect(outside.every((row) => row.value != null && row.value >= -200 && row.value <= 1200)).toBe(true);
 
     db.deleteMachine("LATHE_01");
     expect(db.listMeasurements({ machineId: "LATHE_01" })).toHaveLength(0);
@@ -72,6 +77,13 @@ describe("blondina", () => {
     });
     const created = db.getState().parameters.find((parameter) => parameter.id === "cycle_time");
     expect(created?.machineIds).toEqual(["LATHE_02"]);
+    expect(created?.color).toBeNull();
+
+    db.updateParameter({ ...created!, color: "#929292" });
+    expect(db.getState().parameters.find((parameter) => parameter.id === "cycle_time")?.color).toBe("#929292");
+    expect(() => db.updateParameter({ ...created!, color: "синьо" })).toThrow(BlondinaInputError);
+    expect(normalizeColor("")).toBeNull();
+    expect(nextGeneratedValue(0, 0, 100, () => 0)).toBeLessThan(0);
     db.close();
   });
 

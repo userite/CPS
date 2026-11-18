@@ -24,6 +24,7 @@ export type TrendSeriesInput = {
   unit: string;
   rangeMin: number | null;
   rangeMax: number | null;
+  color?: string | null;
   points: TrendSample[];
 };
 
@@ -55,7 +56,12 @@ export function rangePercent(value: number, min: number, max: number): number {
   return ((value - min) / span) * 100;
 }
 
-export function colorForParameter(parameterId: string, orderedIds: string[]): string {
+export function colorForParameter(
+  parameterId: string,
+  orderedIds: string[],
+  assigned?: string | null,
+): string {
+  if (assigned && /^#[0-9A-Fa-f]{6}$/.test(assigned)) return assigned;
   const index = orderedIds.indexOf(parameterId);
   return parameterColors[(index < 0 ? 0 : index) % parameterColors.length];
 }
@@ -71,7 +77,7 @@ export function guideY(percent: number): number {
 
 export function buildMachineTrend(series: TrendSeriesInput[], orderedIds: string[]): TrendLine[] {
   return series.map((item) => {
-    const color = colorForParameter(item.parameterId, orderedIds);
+    const color = colorForParameter(item.parameterId, orderedIds, item.color);
     const hasRange =
       typeof item.rangeMin === "number" &&
       Number.isFinite(item.rangeMin) &&

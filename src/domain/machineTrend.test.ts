@@ -14,6 +14,8 @@ describe("machine trend", () => {
     const order = ["a", "b"];
     expect(colorForParameter("a", order)).not.toBe(colorForParameter("b", order));
     expect(colorForParameter("b", order)).toBe(colorForParameter("b", ["a", "b"]));
+    expect(colorForParameter("a", order, "#929292")).toBe("#929292");
+    expect(colorForParameter("a", order, null)).toBe(colorForParameter("a", order));
   });
 
   it("marks only the latest point that leaves the limits", () => {
@@ -25,6 +27,7 @@ describe("machine trend", () => {
           unit: "об/мин",
           rangeMin: 0,
           rangeMax: 100,
+          color: "#929292",
           points: [
             { timestamp: "2026-11-18T10:00:00.000Z", value: 40 },
             { timestamp: "2026-11-18T10:01:00.000Z", value: 130 },
@@ -33,6 +36,7 @@ describe("machine trend", () => {
       ],
       ["speed"],
     );
+    expect(line.color).toBe("#929292");
     expect(line.plotted).toBe(true);
     expect(line.outside).toBe(true);
     expect(line.segments[0]?.[1]?.outside).toBe(true);

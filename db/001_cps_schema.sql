@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS cps_parameter (
   range_min                REAL,
   range_max                REAL,
   sample_interval_seconds  INTEGER,
+  color                    TEXT,
   CHECK (
     sample_interval_seconds IS NULL OR sample_interval_seconds > 0
   ),

@@ -33,6 +33,7 @@ function asParameter(body: unknown): ParameterInput {
     rangeMin: record.rangeMin,
     rangeMax: record.rangeMax,
     sampleIntervalSeconds: record.sampleIntervalSeconds,
+    color: record.color,
     machineIds: Array.isArray(record.machineIds) ? record.machineIds.map(String) : [],
   };
 }

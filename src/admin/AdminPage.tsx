@@ -25,6 +25,7 @@ type ParameterDraft = {
   rangeMin: string;
   rangeMax: string;
   sampleIntervalSeconds: string;
+  color: string;
   machineIds: string[];
 };
 
@@ -36,6 +37,7 @@ const emptyParameter: ParameterDraft = {
   rangeMin: "",
   rangeMax: "",
   sampleIntervalSeconds: "",
+  color: "",
   machineIds: [],
 };
 
@@ -119,6 +121,7 @@ export function AdminPage() {
       rangeMax: parameter.rangeMax == null ? "" : String(parameter.rangeMax),
       sampleIntervalSeconds:
         parameter.sampleIntervalSeconds == null ? "" : String(parameter.sampleIntervalSeconds),
+      color: parameter.color ?? "",
       machineIds: parameter.machineIds,
     });
     setTab("parameters");
@@ -277,6 +280,7 @@ export function AdminPage() {
                     rangeMin: optionalNumber(parameterDraft.rangeMin),
                     rangeMax: optionalNumber(parameterDraft.rangeMax),
                     sampleIntervalSeconds: optionalNumber(parameterDraft.sampleIntervalSeconds),
+                    color: parameterDraft.color,
                     machineIds: parameterDraft.machineIds,
                   }),
                 });
@@ -329,6 +333,17 @@ export function AdminPage() {
                 />
               </label>
             </div>
+            <label>
+              Цвят
+              <input
+                value={parameterDraft.color}
+                placeholder="#929292"
+                maxLength={7}
+                spellCheck={false}
+                onChange={(event) => setParameterDraft({ ...parameterDraft, color: event.target.value })}
+              />
+            </label>
+            <p className="admin-muted">Празно поле оставя автоматичния цвят. Форматът е #929292.</p>
             <label>
               Честота, секунди
               <input
@@ -389,7 +404,14 @@ export function AdminPage() {
                   <tr key={parameter.id}>
                     <td>
                       <strong>{parameter.label}</strong>
-                      <div className="admin-muted">{parameter.id}{parameter.unit ? ` · ${parameter.unit}` : ""}</div>
+                      <div className="admin-muted">
+                        {parameter.color && (
+                          <i className="admin-swatch" style={{ background: parameter.color }} aria-hidden="true" />
+                        )}
+                        {parameter.id}
+                        {parameter.unit ? ` · ${parameter.unit}` : ""}
+                        {parameter.color ? ` · ${parameter.color}` : ""}
+                      </div>
                     </td>
                     <td>
                       {parameter.rangeMin == null || parameter.rangeMax == null
@@ -450,8 +472,8 @@ export function AdminPage() {
           >
             <h2>Генератор на измервания</h2>
             <p className="admin-muted">
-              За всяка машина и параметър с диапазон и честота се записват стойности вътре в диапазона.
-              Няма производствена формула. Липсващ диапазон не се заменя с нула.
+              За всяка машина и параметър с диапазон и честота се записват стойности около диапазона,
+              включително до 20% извън границите. Няма производствена формула. Липсващ диапазон не се заменя с нула.
             </p>
             <div className="admin-pair">
               <label>
