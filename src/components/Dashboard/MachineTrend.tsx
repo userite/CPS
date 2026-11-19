@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
+  OUT_OF_RANGE_COLOR,
   TREND_VIEW,
   buildMachineTrend,
   guideY,
+  splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
 import type { DashboardMachine } from "../../server/blondina";
@@ -19,7 +21,7 @@ export function MachineTrend({
   machine: DashboardMachine;
   orderedIds: string[];
 }) {
-  const lines = useMemo(
+  const { lines, frameMin, frameMax } = useMemo(
     () => buildMachineTrend(machine.series, orderedIds),
     [machine.series, orderedIds],
   );
@@ -38,6 +40,8 @@ export function MachineTrend({
       return `${line.label}: ${formatNumber(line.lastPercent)}%${place}`;
     })
     .join(". ");
+  const y0 = guideY(0, frameMin, frameMax);
+  const y100 = guideY(100, frameMin, frameMax);
 
   return (
     <article className="trend-card">
@@ -48,8 +52,8 @@ export function MachineTrend({
       {plotted ? (
         <div className="trend-plot">
         <div className="trend-yaxis" aria-hidden="true">
-          <span style={{ top: `${(guideY(100) / TREND_VIEW.h) * 100}%` }}>100%</span>
-          <span style={{ top: `${(guideY(0) / TREND_VIEW.h) * 100}%` }}>0%</span>
+          <span style={{ top: `${(y100 / TREND_VIEW.h) * 100}%` }}>100%</span>
+          <span style={{ top: `${(y0 / TREND_VIEW.h) * 100}%` }}>0%</span>
         </div>
         <svg
           className="trend-svg"
@@ -59,28 +63,35 @@ export function MachineTrend({
           preserveAspectRatio="xMidYMid meet"
           onMouseLeave={() => setHover(null)}
         >
-          <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={guideY(0)} y2={guideY(0)} />
-          <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={guideY(100)} y2={guideY(100)} />
+          <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
+          <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y100} y2={y100} />
           {lines.map((line) =>
-            line.segments.map((segment, index) =>
-              segment.length >= 2 ? (
-                <polyline
-                  key={`${line.parameterId}-${index}`}
-                  points={pointsOf(segment)}
-                  fill="none"
-                  stroke={line.color}
-                  strokeWidth="0.7"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ) : (
-                <circle
-                  key={`${line.parameterId}-${index}`}
-                  cx={segment[0].x}
-                  cy={segment[0].y}
-                  r="0.55"
-                  fill={line.color}
-                />
-              ),
+            line.segments.flatMap((segment, segmentIndex) =>
+              splitOutsideRuns(segment).map((run, runIndex) => {
+                const stroke = run.outside ? OUT_OF_RANGE_COLOR : line.color;
+                const key = `${line.parameterId}-${segmentIndex}-${runIndex}`;
+                if (run.points.length >= 2) {
+                  return (
+                    <polyline
+                      key={key}
+                      points={pointsOf(run.points)}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth="0.7"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  );
+                }
+                return (
+                  <circle
+                    key={key}
+                    cx={run.points[0].x}
+                    cy={run.points[0].y}
+                    r="0.55"
+                    fill={stroke}
+                  />
+                );
+              }),
             ),
           )}
           {lines.flatMap((line) =>
@@ -91,7 +102,7 @@ export function MachineTrend({
                 cy={point.y}
                 r="0.85"
                 fill="none"
-                stroke={line.color}
+                stroke={OUT_OF_RANGE_COLOR}
                 strokeWidth="0.45"
                 vectorEffect="non-scaling-stroke"
               />

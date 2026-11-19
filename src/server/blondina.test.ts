@@ -82,6 +82,8 @@ describe("blondina", () => {
     db.updateParameter({ ...created!, color: "#929292" });
     expect(db.getState().parameters.find((parameter) => parameter.id === "cycle_time")?.color).toBe("#929292");
     expect(() => db.updateParameter({ ...created!, color: "синьо" })).toThrow(BlondinaInputError);
+    expect(() => normalizeColor("#FF0000")).toThrow(BlondinaInputError);
+    expect(() => normalizeColor("#ff0000")).toThrow(BlondinaInputError);
     expect(normalizeColor("")).toBeNull();
     expect(nextGeneratedValue(0, 0, 100, () => 0)).toBeLessThan(0);
     db.close();

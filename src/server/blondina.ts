@@ -209,6 +209,11 @@ export function normalizeColor(value: unknown): string | null {
   if (!COLOR_PATTERN.test(color)) {
     throw new BlondinaInputError("Цветът се записва като #929292.");
   }
+  if (color.toLowerCase() === "#ff0000") {
+    throw new BlondinaInputError(
+      "Чистият червен #FF0000 е запазен за стойности извън границите на пулта.",
+    );
+  }
   return color.toLowerCase();
 }
 
