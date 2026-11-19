@@ -8,10 +8,36 @@ import {
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
+import { buildPlanProgress, type PlanProgress } from "../../domain/planProgress";
 import type { DashboardMachine } from "../../server/blondina";
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
+}
+
+function PlanRing({ progress }: { progress: PlanProgress }) {
+  const shown = Math.max(0, progress.percent);
+  const arc = Math.min(100, shown);
+  return (
+    <div
+      className="trend-ring"
+      title={`${progress.reportLabel}: ${formatNumber(progress.reportSum)} / ${progress.planLabel}: ${formatNumber(progress.planValue)}`}
+      aria-label={`Изпълнение ${formatNumber(shown)} процента`}
+    >
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="trend-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+        <circle
+          className="trend-ring-value"
+          cx="18"
+          cy="18"
+          r="14"
+          pathLength="100"
+          style={{ stroke: progress.color, strokeDasharray: `${arc} 100` }}
+        />
+      </svg>
+      <span>{formatNumber(shown)}%</span>
+    </div>
+  );
 }
 
 export function MachineTrend({
@@ -23,6 +49,10 @@ export function MachineTrend({
 }) {
   const { lines, frameMin, frameMax } = useMemo(
     () => buildMachineTrend(machine.series, orderedIds),
+    [machine.series, orderedIds],
+  );
+  const planProgress = useMemo(
+    () => buildPlanProgress(machine.series, orderedIds),
     [machine.series, orderedIds],
   );
   const [hover, setHover] = useState<TrendPoint | null>(null);
@@ -138,22 +168,25 @@ export function MachineTrend({
       <p className="trend-readout">
         {hover ? (hover.outside ? "Извън границите" : `${formatNumber(hover.percent)}%`) : "\u00a0"}
       </p>
-      <ul className="trend-legend">
-        {lines.map((line) => (
-          <li key={line.parameterId}>
-            <i style={{ background: line.color }} aria-hidden="true" />
-            <span>{line.label}</span>
-            <span className="trend-legend-value">
-              {!line.hasRange
-                ? "без граници"
-                : line.lastPercent == null
-                  ? "няма данни"
-                  : `${formatNumber(line.lastPercent)}%`}
-              {line.outside ? " · извън" : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="trend-foot">
+        {planProgress ? <PlanRing progress={planProgress} /> : null}
+        <ul className="trend-legend">
+          {lines.map((line) => (
+            <li key={line.parameterId}>
+              <i style={{ background: line.color }} aria-hidden="true" />
+              <span>{line.label}</span>
+              <span className="trend-legend-value">
+                {!line.hasRange
+                  ? "без граници"
+                  : line.lastPercent == null
+                    ? "няма данни"
+                    : `${formatNumber(line.lastPercent)}%`}
+                {line.outside ? " · извън" : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </article>
   );
 }

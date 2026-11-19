@@ -308,6 +308,9 @@ export function AdminPage() {
                 required
               />
             </label>
+            <p className="admin-muted">
+              За кръга на пулта: едно име с „ПЛАН“, друго с „изпълнение“ или „отчет“.
+            </p>
             <label>
               Единица
               <input
