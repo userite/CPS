@@ -25,14 +25,14 @@ function PlanRing({ progress }: { progress: PlanProgress }) {
       aria-label={`Изпълнение ${formatNumber(shown)} процента`}
     >
       <svg viewBox="0 0 36 36" aria-hidden="true">
-        <circle className="trend-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+        <circle className="trend-ring-track" cx="18" cy="18" r="13" pathLength="100" />
         <circle
           className="trend-ring-value"
           cx="18"
           cy="18"
-          r="14"
+          r="13"
           pathLength="100"
-          style={{ stroke: progress.color, strokeDasharray: `${arc} 100` }}
+          style={{ strokeDasharray: `${arc} 100` }}
         />
       </svg>
       <span>{formatNumber(shown)}%</span>

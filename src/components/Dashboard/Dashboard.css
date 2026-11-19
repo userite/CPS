@@ -272,16 +272,16 @@
 .trend-foot {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-top: 0.2rem;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
   min-width: 0;
 }
 
 .trend-ring {
   position: relative;
   flex: 0 0 auto;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 4.4rem;
+  height: 4.4rem;
 }
 
 .trend-ring svg {
@@ -293,14 +293,15 @@
 .trend-ring-track,
 .trend-ring-value {
   fill: none;
-  stroke-width: 3.2;
+  stroke-width: 5.5;
 }
 
 .trend-ring-track {
-  stroke: var(--card-border);
+  stroke: color-mix(in srgb, #3ddc97 28%, var(--card-border));
 }
 
 .trend-ring-value {
+  stroke: #3ddc97;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 18px 18px;
@@ -311,7 +312,9 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 0.58rem;
+  color: #3ddc97;
+  font-size: 0.85rem;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
