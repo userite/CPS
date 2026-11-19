@@ -11,12 +11,20 @@ export type PlanProgress = {
   color: string;
 };
 
-/** Tag from the parameter name: "ПЛАН" vs "изпълнение" / "отчет". */
-export function parameterPlanRole(label: string): PlanRole | null {
-  const normalized = label.trim().toLocaleLowerCase("bg-BG");
+/** Tag from parameter name or id: "ПЛАН"/"plan" vs "изпълнение"/"отчет"/"report". */
+export function parameterPlanRole(label: string, parameterId = ""): PlanRole | null {
+  const normalized = `${label} ${parameterId}`.trim().toLocaleLowerCase("bg-BG");
   if (!normalized) return null;
-  if (normalized.includes("план")) return "plan";
-  if (normalized.includes("изпълнение") || normalized.includes("отчет")) return "report";
+  if (normalized.includes("план") || /(^|[^a-z])plan([^a-z]|$)/i.test(normalized)) {
+    return "plan";
+  }
+  if (
+    normalized.includes("изпълнение") ||
+    normalized.includes("отчет") ||
+    /(^|[^a-z])report([^a-z]|$)/i.test(normalized)
+  ) {
+    return "report";
+  }
   return null;
 }
 
@@ -52,7 +60,7 @@ export function buildPlanProgress(
   let plan: TrendSeriesInput | null = null;
   let report: TrendSeriesInput | null = null;
   for (const item of series) {
-    const role = parameterPlanRole(item.label);
+    const role = parameterPlanRole(item.label, item.parameterId);
     if (role === "plan" && !plan) plan = item;
     if (role === "report" && !report) report = item;
   }

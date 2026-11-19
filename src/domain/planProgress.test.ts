@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { buildPlanProgress, parameterPlanRole } from "./planProgress";
 
 describe("plan progress", () => {
-  it("tags plan and report from the parameter name", () => {
+  it("tags plan and report from the parameter name or id", () => {
     expect(parameterPlanRole("ПЛАН производство")).toBe("plan");
     expect(parameterPlanRole("Дневен план")).toBe("plan");
     expect(parameterPlanRole("Изпълнение смяна")).toBe("report");
     expect(parameterPlanRole("Отчет брой")).toBe("report");
     expect(parameterPlanRole("Скорост на въртене")).toBeNull();
+    expect(parameterPlanRole("Quantity", "plan")).toBe("plan");
+    expect(parameterPlanRole("Shift total", "report")).toBe("report");
   });
 
   it("sums report samples up to the last plan and divides by that plan", () => {
