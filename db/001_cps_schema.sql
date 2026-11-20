@@ -27,12 +27,23 @@ CREATE TABLE IF NOT EXISTS cps_parameter (
   range_max                REAL,
   sample_interval_seconds  INTEGER,
   color                    TEXT,
+  role                     TEXT NOT NULL DEFAULT 'metric'
+    CHECK (role IN ('metric', 'plan', 'report', 'status')),
   CHECK (
     sample_interval_seconds IS NULL OR sample_interval_seconds > 0
   ),
   CHECK (
     range_min IS NULL OR range_max IS NULL OR range_min <= range_max
   )
+);
+
+CREATE TABLE IF NOT EXISTS cps_parameter_state (
+  parameter_id  TEXT NOT NULL REFERENCES cps_parameter (id) ON DELETE CASCADE,
+  value         REAL NOT NULL,
+  label         TEXT NOT NULL,
+  color         TEXT NOT NULL,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (parameter_id, value)
 );
 
 CREATE TABLE IF NOT EXISTS cps_machine_parameter (

@@ -18,5 +18,22 @@ export const oeeColorThresholds: OeeColorThresholds = {
 /** How often the screen re-reads blondina. The plant has not set this interval. */
 export const readerIntervalMs = 5_000;
 
-/** Half a shift. Each chart asks for this much history. */
-export const chartWindowMinutes = 4 * 60;
+/** Default X window on the табло: last N hours. */
+export const chartWindowHoursDefault = 4;
+
+/** Allowed choices for the hours control. */
+export const chartWindowHourChoices = [1, 2, 4, 8, 12, 24] as const;
+
+export const chartWindowHoursStorageKey = "cps.chartWindowHours";
+
+export function normalizeChartWindowHours(value: unknown): number {
+  const hours = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(hours) || hours <= 0) return chartWindowHoursDefault;
+  return Math.min(168, Math.max(1, Math.round(hours)));
+}
+
+/** Fixed [now − N hours, now] domain for line chart + status strip. */
+export function chartWindowDomain(hours: number, nowMs = Date.now()): { tMin: number; tMax: number } {
+  const spanMs = normalizeChartWindowHours(hours) * 60 * 60_000;
+  return { tMin: nowMs - spanMs, tMax: nowMs };
+}

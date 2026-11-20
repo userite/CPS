@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DEFAULT_STATUS_STATES, type ParameterRole } from "../domain/parameterRole";
 import type {
   BlondinaState,
   GenerateResult,
@@ -18,6 +19,12 @@ type MachineDraft = {
   kind: MachineKind;
 };
 
+type StateDraft = {
+  value: string;
+  label: string;
+  color: string;
+};
+
 type ParameterDraft = {
   id: string;
   label: string;
@@ -26,6 +33,8 @@ type ParameterDraft = {
   rangeMax: string;
   sampleIntervalSeconds: string;
   color: string;
+  role: ParameterRole;
+  states: StateDraft[];
   machineIds: string[];
 };
 
@@ -38,7 +47,20 @@ const emptyParameter: ParameterDraft = {
   rangeMax: "",
   sampleIntervalSeconds: "",
   color: "",
+  role: "metric",
+  states: DEFAULT_STATUS_STATES.map((state) => ({
+    value: String(state.value),
+    label: state.label,
+    color: state.color,
+  })),
   machineIds: [],
+};
+
+const ROLE_LABELS: Record<ParameterRole, string> = {
+  metric: "Линейна графика",
+  plan: "План",
+  report: "Отчет / изпълнение",
+  status: "Статус (лента)",
 };
 
 function localInputValue(date: Date): string {
@@ -122,6 +144,15 @@ export function AdminPage() {
       sampleIntervalSeconds:
         parameter.sampleIntervalSeconds == null ? "" : String(parameter.sampleIntervalSeconds),
       color: parameter.color ?? "",
+      role: parameter.role,
+      states:
+        parameter.states.length > 0
+          ? parameter.states.map((state) => ({
+              value: String(state.value),
+              label: state.label,
+              color: state.color,
+            }))
+          : emptyParameter.states,
       machineIds: parameter.machineIds,
     });
     setTab("parameters");
@@ -140,8 +171,9 @@ export function AdminPage() {
       <p className="demo-note">
         Базата е SQL Server <span className="admin-path">{state?.dbPath ?? "CPS_ATRA"}</span>.
         Таблиците са <span className="admin-path">cps_machine</span>, <span className="admin-path">cps_parameter</span>,{" "}
-        <span className="admin-path">cps_machine_parameter</span> и <span className="admin-path">cps_measurement</span>.
-        Петият параметър не е именуван — добавя се оттук. Диапазонът и честотата не са цехови граници, докато не ги запишете.
+        <span className="admin-path">cps_parameter_state</span>, <span className="admin-path">cps_machine_parameter</span> и{" "}
+        <span className="admin-path">cps_measurement</span>.
+        Ролята казва дали параметърът е за линейна графика, план/отчет или статусна лента на таблото.
       </p>
       {error && <p className="admin-error">{error}</p>}
       <div className="admin-tabs" role="tablist">
@@ -281,6 +313,15 @@ export function AdminPage() {
                     rangeMax: optionalNumber(parameterDraft.rangeMax),
                     sampleIntervalSeconds: optionalNumber(parameterDraft.sampleIntervalSeconds),
                     color: parameterDraft.color,
+                    role: parameterDraft.role,
+                    states:
+                      parameterDraft.role === "status"
+                        ? parameterDraft.states.map((state) => ({
+                            value: optionalNumber(state.value),
+                            label: state.label,
+                            color: state.color,
+                          }))
+                        : [],
                     machineIds: parameterDraft.machineIds,
                   }),
                 });
@@ -309,41 +350,135 @@ export function AdminPage() {
               />
             </label>
             <label>
-              Единица
-              <input
-                value={parameterDraft.unit}
-                onChange={(event) => setParameterDraft({ ...parameterDraft, unit: event.target.value })}
-              />
+              Роля
+              <select
+                value={parameterDraft.role}
+                onChange={(event) =>
+                  setParameterDraft({
+                    ...parameterDraft,
+                    role: event.target.value as ParameterRole,
+                  })
+                }
+              >
+                {(Object.keys(ROLE_LABELS) as ParameterRole[]).map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </option>
+                ))}
+              </select>
             </label>
-            <div className="admin-pair">
-              <label>
-                От
-                <input
-                  inputMode="decimal"
-                  value={parameterDraft.rangeMin}
-                  onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMin: event.target.value })}
-                />
-              </label>
-              <label>
-                До
-                <input
-                  inputMode="decimal"
-                  value={parameterDraft.rangeMax}
-                  onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMax: event.target.value })}
-                />
-              </label>
-            </div>
-            <label>
-              Цвят
-              <input
-                value={parameterDraft.color}
-                placeholder="#929292"
-                maxLength={7}
-                spellCheck={false}
-                onChange={(event) => setParameterDraft({ ...parameterDraft, color: event.target.value })}
-              />
-            </label>
-            <p className="admin-muted">Празно поле оставя автоматичния цвят. Форматът е #929292.</p>
+            <p className="admin-muted">
+              План и отчет захранват кръга на таблото. Статусът е отделна лента от квадратчета и не влиза в линейната графика.
+            </p>
+            {parameterDraft.role !== "status" ? (
+              <>
+                <label>
+                  Единица
+                  <input
+                    value={parameterDraft.unit}
+                    onChange={(event) => setParameterDraft({ ...parameterDraft, unit: event.target.value })}
+                  />
+                </label>
+                <div className="admin-pair">
+                  <label>
+                    От
+                    <input
+                      inputMode="decimal"
+                      value={parameterDraft.rangeMin}
+                      onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMin: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    До
+                    <input
+                      inputMode="decimal"
+                      value={parameterDraft.rangeMax}
+                      onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMax: event.target.value })}
+                    />
+                  </label>
+                </div>
+                {parameterDraft.role === "metric" ? (
+                  <>
+                    <label>
+                      Цвят
+                      <input
+                        value={parameterDraft.color}
+                        placeholder="#929292"
+                        maxLength={7}
+                        spellCheck={false}
+                        onChange={(event) => setParameterDraft({ ...parameterDraft, color: event.target.value })}
+                      />
+                    </label>
+                    <p className="admin-muted">Празно поле оставя автоматичния цвят. Форматът е #929292.</p>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <fieldset>
+                <legend>Състояния</legend>
+                <p className="admin-muted">
+                  Стойност · текст · цвят. Пример: 0 работи зелено, 1 авария червено, 2 технологичен престой жълто.
+                </p>
+                {parameterDraft.states.map((state, index) => (
+                  <div key={index} className="admin-state-row">
+                    <input
+                      inputMode="decimal"
+                      value={state.value}
+                      aria-label={`Стойност ${index + 1}`}
+                      onChange={(event) => {
+                        const states = [...parameterDraft.states];
+                        states[index] = { ...state, value: event.target.value };
+                        setParameterDraft({ ...parameterDraft, states });
+                      }}
+                    />
+                    <input
+                      value={state.label}
+                      aria-label={`Текст ${index + 1}`}
+                      onChange={(event) => {
+                        const states = [...parameterDraft.states];
+                        states[index] = { ...state, label: event.target.value };
+                        setParameterDraft({ ...parameterDraft, states });
+                      }}
+                    />
+                    <input
+                      value={state.color}
+                      maxLength={7}
+                      spellCheck={false}
+                      aria-label={`Цвят ${index + 1}`}
+                      onChange={(event) => {
+                        const states = [...parameterDraft.states];
+                        states[index] = { ...state, color: event.target.value };
+                        setParameterDraft({ ...parameterDraft, states });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        setParameterDraft({
+                          ...parameterDraft,
+                          states: parameterDraft.states.filter((_, row) => row !== index),
+                        })
+                      }
+                    >
+                      –
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    setParameterDraft({
+                      ...parameterDraft,
+                      states: [...parameterDraft.states, { value: "", label: "", color: "#929292" }],
+                    })
+                  }
+                >
+                  Добави състояние
+                </button>
+              </fieldset>
+            )}
             <label>
               Честота, секунди
               <input
@@ -393,7 +528,8 @@ export function AdminPage() {
               <thead>
                 <tr>
                   <th>Параметър</th>
-                  <th>Диапазон</th>
+                  <th>Роля</th>
+                  <th>Диапазон / състояния</th>
                   <th>Честота</th>
                   <th>Машини</th>
                   <th></th>
@@ -413,10 +549,15 @@ export function AdminPage() {
                         {parameter.color ? ` · ${parameter.color}` : ""}
                       </div>
                     </td>
+                    <td>{ROLE_LABELS[parameter.role]}</td>
                     <td>
-                      {parameter.rangeMin == null || parameter.rangeMax == null
-                        ? "не е зададен"
-                        : `${parameter.rangeMin} – ${parameter.rangeMax}`}
+                      {parameter.role === "status"
+                        ? parameter.states
+                            .map((state) => `${state.value}=${state.label}`)
+                            .join(", ") || "няма състояния"
+                        : parameter.rangeMin == null || parameter.rangeMax == null
+                          ? "не е зададен"
+                          : `${parameter.rangeMin} – ${parameter.rangeMax}`}
                     </td>
                     <td>{parameter.sampleIntervalSeconds == null ? "—" : `${parameter.sampleIntervalSeconds} сек`}</td>
                     <td>{parameter.machineIds.map((id) => machineName.get(id) ?? id).join(", ")}</td>
