@@ -156,6 +156,7 @@ export function MachineTrend({
                       />
                     );
                   }
+                  if (run.outside) return null;
                   return (
                     <circle
                       key={key}
@@ -167,20 +168,6 @@ export function MachineTrend({
                   );
                 }),
               ),
-            )}
-            {lines.flatMap((line) =>
-              line.segments.flat().filter((point) => point.outside).map((point) => (
-                <circle
-                  key={`out-${line.parameterId}-${point.timestamp}`}
-                  cx={point.x}
-                  cy={point.y}
-                  r="0.85"
-                  fill="none"
-                  stroke={OUT_OF_RANGE_COLOR}
-                  strokeWidth="0.45"
-                  vectorEffect="non-scaling-stroke"
-                />
-              )),
             )}
             {lines.flatMap((line) =>
               line.segments.flat().map((point) => (
