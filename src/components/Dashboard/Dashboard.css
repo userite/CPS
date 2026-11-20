@@ -253,12 +253,15 @@
 }
 
 .trend-status {
+  --trend-ring-size: 4.4rem;
+  /* Match the green ring stroke: 5.5 units in a 36 viewBox on the 4.4rem ring. */
+  --trend-ring-stroke: calc(var(--trend-ring-size) * 5.5 / 36);
   grid-column: 2;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.35rem;
-  margin-top: 0.28rem;
+  margin-top: 0.2rem;
 }
 
 .trend-status-label {
@@ -269,16 +272,17 @@
 
 .trend-status-cells {
   display: flex;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
+  height: var(--trend-ring-stroke);
   overflow: hidden;
 }
 
 .trend-status-cells i {
   flex: 1 1 0;
-  min-width: 0.42rem;
-  height: 0.95rem;
-  border-radius: 2px;
+  min-width: 0.28rem;
+  height: 100%;
+  border-radius: 1px;
 }
 
 .trend-guide {
@@ -311,10 +315,11 @@
 }
 
 .trend-ring {
+  --trend-ring-size: 4.4rem;
   position: relative;
   flex: 0 0 auto;
-  width: 4.4rem;
-  height: 4.4rem;
+  width: var(--trend-ring-size);
+  height: var(--trend-ring-size);
 }
 
 .trend-ring svg {
