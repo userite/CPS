@@ -40,7 +40,7 @@ function finiteSamples(points: TrendSample[]): FiniteSample[] {
 }
 
 /**
- * % = sum(report values at/before the last plan sample) / last plan value.
+ * % = sum(report values strictly after the latest plan sample) / last plan value.
  * Needs one series tagged ПЛАН/plan and one tagged изпълнение/отчет/report.
  */
 export function buildPlanProgress(
@@ -61,7 +61,7 @@ export function buildPlanProgress(
   if (!lastPlan || lastPlan.value <= 0) return null;
 
   const reportSum = finiteSamples(report.points)
-    .filter((sample) => sample.t <= lastPlan.t)
+    .filter((sample) => sample.t > lastPlan.t)
     .reduce((sum, sample) => sum + sample.value, 0);
 
   return {
