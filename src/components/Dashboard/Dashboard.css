@@ -248,6 +248,39 @@
   font-variant-numeric: tabular-nums;
 }
 
+.trend-svg-spacer {
+  min-height: 0.4rem;
+}
+
+.trend-status {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.28rem;
+}
+
+.trend-status-label {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  white-space: nowrap;
+}
+
+.trend-status-cells {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.trend-status-cells i {
+  flex: 1 1 0;
+  min-width: 0.42rem;
+  height: 0.95rem;
+  border-radius: 2px;
+}
+
 .trend-guide {
   stroke: var(--card-border);
   stroke-width: 0.35;

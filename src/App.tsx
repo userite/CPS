@@ -10,7 +10,7 @@ export function App() {
     <div className={view === "dashboard" ? "app-shell app-shell-fit" : "app-shell"}>
       <nav className="app-nav">
         <button type="button" aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>
-          Пулт
+          Табло
         </button>
         <button type="button" aria-pressed={view === "admin"} onClick={() => setView("admin")}>
           Администрация

@@ -28,6 +28,7 @@ export type TrendSeriesInput = {
   rangeMin: number | null;
   rangeMax: number | null;
   color?: string | null;
+  role?: string | null;
   points: TrendSample[];
 };
 

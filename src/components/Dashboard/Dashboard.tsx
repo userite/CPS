@@ -42,8 +42,8 @@ export function Dashboard() {
     <main className="dash">
       <header className="dash-header">
         <div>
-          <p className="kicker">Пулт</p>
-          <h1>Контролен пулт</h1>
+          <p className="kicker">Табло</p>
+          <h1>Контролно табло</h1>
         </div>
         <div className="dash-side">
           <span>{`Четене на всеки ${readerIntervalMs / 1000} сек`}</span>

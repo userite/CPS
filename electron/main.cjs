@@ -9,7 +9,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     show: false,
-    title: "CPS — контролен пулт",
+    title: "CPS — контролно табло",
     backgroundColor: "#0c1218",
     autoHideMenuBar: true,
     webPreferences: {

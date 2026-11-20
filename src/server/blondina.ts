@@ -2,6 +2,17 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import {
+  parseParameterRole,
+  parseStates,
+  pickStateValue,
+  rangeFromStates,
+} from "../domain/normalizeParameterStates";
+import {
+  resolveParameterRole,
+  type ParameterRole,
+  type ParameterStateDef,
+} from "../domain/parameterRole";
 
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,40}$/;
 const MAX_GENERATED_ROWS = 20_000;
@@ -9,6 +20,7 @@ const MAX_GENERATED_ROWS = 20_000;
 export class BlondinaInputError extends Error {}
 
 export type MachineKind = "lathe" | "other";
+export type { ParameterRole, ParameterStateDef };
 
 export type MachineInput = {
   id: string;
@@ -25,6 +37,8 @@ export type ParameterInput = {
   rangeMax?: number | null;
   sampleIntervalSeconds?: number | null;
   color?: string | null;
+  role?: ParameterRole | string | null;
+  states?: ParameterStateDef[];
   machineIds: string[];
 };
 
@@ -44,6 +58,8 @@ export type ParameterRow = {
   rangeMax: number | null;
   sampleIntervalSeconds: number | null;
   color: string | null;
+  role: ParameterRole;
+  states: ParameterStateDef[];
   machineIds: string[];
 };
 
@@ -89,6 +105,8 @@ export type DashboardSeries = {
   rangeMin: number | null;
   rangeMax: number | null;
   color: string | null;
+  role: ParameterRole;
+  states: ParameterStateDef[];
   points: Array<{ timestamp: string; value: number | null }>;
 };
 
@@ -211,7 +229,7 @@ export function normalizeColor(value: unknown): string | null {
   }
   if (color.toLowerCase() === "#ff0000") {
     throw new BlondinaInputError(
-      "Чистият червен #FF0000 е запазен за стойности извън границите на пулта.",
+      "Чистият червен #FF0000 е запазен за стойности извън границите на таблото.",
     );
   }
   return color.toLowerCase();
@@ -269,11 +287,104 @@ function ensureColorColumn(db: DatabaseSync): void {
   db.exec("ALTER TABLE cps_parameter ADD COLUMN color TEXT");
 }
 
+function ensureRoleAndStates(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(cps_parameter)").all();
+  if (!columns.some((column) => column.name === "role")) {
+    db.exec("ALTER TABLE cps_parameter ADD COLUMN role TEXT NOT NULL DEFAULT 'metric'");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cps_parameter_state (
+      parameter_id  TEXT NOT NULL REFERENCES cps_parameter (id) ON DELETE CASCADE,
+      value         REAL NOT NULL,
+      label         TEXT NOT NULL,
+      color         TEXT NOT NULL,
+      sort_order    INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (parameter_id, value)
+    )
+  `);
+}
+
+function replaceStates(db: DatabaseSync, parameterId: string, states: ParameterStateDef[]): void {
+  db.prepare("DELETE FROM cps_parameter_state WHERE parameter_id = ?").run(parameterId);
+  const insert = db.prepare(
+    `INSERT INTO cps_parameter_state (parameter_id, value, label, color, sort_order)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  states.forEach((state, index) => {
+    insert.run(parameterId, state.value, state.label, state.color, index);
+  });
+}
+
+function loadStatesMap(db: DatabaseSync): Map<string, ParameterStateDef[]> {
+  const rows = db
+    .prepare(
+      `SELECT parameter_id AS parameterId, value, label, color, sort_order AS sortOrder
+       FROM cps_parameter_state
+       ORDER BY parameter_id, sort_order, value`,
+    )
+    .all();
+  const map = new Map<string, ParameterStateDef[]>();
+  for (const row of rows) {
+    const id = String(row.parameterId);
+    const list = map.get(id) ?? [];
+    list.push({
+      value: Number(row.value),
+      label: String(row.label),
+      color: String(row.color),
+    });
+    map.set(id, list);
+  }
+  return map;
+}
+
+function prepareParameterWrite(input: ParameterInput): {
+  role: ParameterRole;
+  states: ParameterStateDef[];
+  rangeMin: number | null;
+  rangeMax: number | null;
+  sampleIntervalSeconds: number | null;
+  color: string | null;
+} {
+  const role = parseParameterRole(input.role);
+  const parsed = parseStates(input.states, role);
+  if (parsed.error) throw new BlondinaInputError(parsed.error);
+  const states = parsed.states;
+  const range = normalizeRange(
+    numberOrNull(input.rangeMin),
+    numberOrNull(input.rangeMax),
+    numberOrNull(input.sampleIntervalSeconds),
+  );
+  if (role === "status") {
+    const fromStates = rangeFromStates(states);
+    if (!fromStates) throw new BlondinaInputError("Статусният параметър трябва да има състояния.");
+    if (range.sampleIntervalSeconds == null) {
+      throw new BlondinaInputError("Статусният параметър трябва да има честота.");
+    }
+    return {
+      role,
+      states,
+      rangeMin: fromStates.rangeMin,
+      rangeMax: fromStates.rangeMax,
+      sampleIntervalSeconds: range.sampleIntervalSeconds,
+      color: null,
+    };
+  }
+  return {
+    role,
+    states: [],
+    rangeMin: range.rangeMin,
+    rangeMax: range.rangeMax,
+    sampleIntervalSeconds: range.sampleIntervalSeconds,
+    color: normalizeColor(input.color),
+  };
+}
+
 export function openBlondina(dbPath: string): Blondina {
   const db = new DatabaseSync(dbPath);
   db.exec(schemaSql());
   db.exec("PRAGMA foreign_keys = ON");
   ensureColorColumn(db);
+  ensureRoleAndStates(db);
   seed(db);
 
   const listMachines = (): MachineRow[] =>
@@ -296,7 +407,7 @@ export function openBlondina(dbPath: string): Blondina {
     const parameters = db
       .prepare(
         `SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
-                sample_interval_seconds AS sampleIntervalSeconds, color
+                sample_interval_seconds AS sampleIntervalSeconds, color, role
          FROM cps_parameter
          ORDER BY label`,
       )
@@ -304,19 +415,27 @@ export function openBlondina(dbPath: string): Blondina {
     const links = db
       .prepare("SELECT machine_id AS machineId, parameter_id AS parameterId FROM cps_machine_parameter")
       .all();
-    return parameters.map((row) => ({
-      id: String(row.id),
-      label: String(row.label),
-      unit: String(row.unit ?? ""),
-      rangeMin: row.rangeMin == null ? null : Number(row.rangeMin),
-      rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
-      sampleIntervalSeconds:
-        row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
-      color: row.color == null ? null : String(row.color),
-      machineIds: links
-        .filter((link) => link.parameterId === row.id)
-        .map((link) => String(link.machineId)),
-    }));
+    const statesMap = loadStatesMap(db);
+    return parameters.map((row) => {
+      const id = String(row.id);
+      const label = String(row.label);
+      const states = statesMap.get(id) ?? [];
+      return {
+        id,
+        label,
+        unit: String(row.unit ?? ""),
+        rangeMin: row.rangeMin == null ? null : Number(row.rangeMin),
+        rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
+        sampleIntervalSeconds:
+          row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
+        color: row.color == null ? null : String(row.color),
+        role: resolveParameterRole(label, id, row.role == null ? null : String(row.role)),
+        states,
+        machineIds: links
+          .filter((link) => link.parameterId === id)
+          .map((link) => String(link.machineId)),
+      };
+    });
   };
 
   return {
@@ -365,32 +484,29 @@ export function openBlondina(dbPath: string): Blondina {
     createParameter(input) {
       const id = requireId(input.id, "Идентификаторът");
       const label = requireName(input.label, "Името");
-      const range = normalizeRange(
-        numberOrNull(input.rangeMin),
-        numberOrNull(input.rangeMax),
-        numberOrNull(input.sampleIntervalSeconds),
-      );
+      const prepared = prepareParameterWrite(input);
       if (db.prepare("SELECT id FROM cps_parameter WHERE id = ?").get(id)) {
         throw new BlondinaInputError("Вече има параметър с този идентификатор.");
       }
       const links = machineIds(db, input.machineIds);
-      const color = normalizeColor(input.color);
       db.exec("BEGIN");
       try {
         db.prepare(
           `INSERT INTO cps_parameter
-             (id, label, unit, range_min, range_max, sample_interval_seconds, color)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, label, unit, range_min, range_max, sample_interval_seconds, color, role)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           label,
           text(input.unit) ?? "",
-          range.rangeMin,
-          range.rangeMax,
-          range.sampleIntervalSeconds,
-          color,
+          prepared.rangeMin,
+          prepared.rangeMax,
+          prepared.sampleIntervalSeconds,
+          prepared.color,
+          prepared.role,
         );
         replaceLinks(db, id, links);
+        replaceStates(db, id, prepared.states);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -400,32 +516,29 @@ export function openBlondina(dbPath: string): Blondina {
     updateParameter(input) {
       const id = requireId(input.id, "Идентификаторът");
       const label = requireName(input.label, "Името");
-      const range = normalizeRange(
-        numberOrNull(input.rangeMin),
-        numberOrNull(input.rangeMax),
-        numberOrNull(input.sampleIntervalSeconds),
-      );
+      const prepared = prepareParameterWrite(input);
       if (!db.prepare("SELECT id FROM cps_parameter WHERE id = ?").get(id)) {
         throw new BlondinaInputError("Няма такъв параметър.");
       }
       const links = machineIds(db, input.machineIds);
-      const color = normalizeColor(input.color);
       db.exec("BEGIN");
       try {
         db.prepare(
           `UPDATE cps_parameter
-             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?, color = ?
+             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?, color = ?, role = ?
            WHERE id = ?`,
         ).run(
           label,
           text(input.unit) ?? "",
-          range.rangeMin,
-          range.rangeMax,
-          range.sampleIntervalSeconds,
-          color,
+          prepared.rangeMin,
+          prepared.rangeMax,
+          prepared.sampleIntervalSeconds,
+          prepared.color,
+          prepared.role,
           id,
         );
         replaceLinks(db, id, links);
+        replaceStates(db, id, prepared.states);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -447,11 +560,12 @@ export function openBlondina(dbPath: string): Blondina {
       if (fromMs > toMs) {
         throw new BlondinaInputError("Началото на периода е след края.");
       }
+      const statesMap = loadStatesMap(db);
       const series = db
         .prepare(
           `SELECT mp.machine_id AS machineId, mp.parameter_id AS parameterId,
                   p.range_min AS rangeMin, p.range_max AS rangeMax,
-                  p.sample_interval_seconds AS sampleIntervalSeconds
+                  p.sample_interval_seconds AS sampleIntervalSeconds, p.role AS role
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id`,
         )
@@ -463,11 +577,34 @@ export function openBlondina(dbPath: string): Blondina {
         rangeMin: number;
         rangeMax: number;
         stepMs: number;
+        states: ParameterStateDef[];
       }> = [];
       for (const row of series) {
         const rangeMin = row.rangeMin == null ? null : Number(row.rangeMin);
         const rangeMax = row.rangeMax == null ? null : Number(row.rangeMax);
         const interval = row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds);
+        const states = statesMap.get(String(row.parameterId)) ?? [];
+        const role = parseParameterRole(row.role);
+        if (role === "status") {
+          if (states.length === 0 || interval == null) {
+            skipped.push({
+              machineId: String(row.machineId),
+              parameterId: String(row.parameterId),
+              reason: "липсват състояния или честота",
+            });
+            continue;
+          }
+          const fromStates = rangeFromStates(states)!;
+          runnable.push({
+            machineId: String(row.machineId),
+            parameterId: String(row.parameterId),
+            rangeMin: fromStates.rangeMin,
+            rangeMax: fromStates.rangeMax,
+            stepMs: interval * 1000,
+            states,
+          });
+          continue;
+        }
         if (rangeMin == null || rangeMax == null || interval == null) {
           skipped.push({
             machineId: String(row.machineId),
@@ -482,6 +619,7 @@ export function openBlondina(dbPath: string): Blondina {
           rangeMin,
           rangeMax,
           stepMs: interval * 1000,
+          states: [],
         });
       }
       const estimated = runnable.reduce((sum, item) => {
@@ -500,6 +638,18 @@ export function openBlondina(dbPath: string): Blondina {
       db.exec("BEGIN");
       try {
         for (const item of runnable) {
+          if (item.states.length > 0) {
+            for (let time = fromMs; time <= toMs; time += item.stepMs) {
+              insert.run(
+                item.machineId,
+                item.parameterId,
+                new Date(time).toISOString(),
+                pickStateValue(item.states, random),
+              );
+              inserted += 1;
+            }
+            continue;
+          }
           const span = item.rangeMax - item.rangeMin;
           let current = item.rangeMin + random() * span;
           for (let time = fromMs; time <= toMs; time += item.stepMs) {
@@ -519,16 +669,19 @@ export function openBlondina(dbPath: string): Blondina {
     appendDueSamples(now = new Date(), random = Math.random) {
       const nowMs = now.getTime();
       if (!Number.isFinite(nowMs)) return 0;
+      const statesMap = loadStatesMap(db);
       const series = db
         .prepare(
           `SELECT mp.machine_id AS machineId, mp.parameter_id AS parameterId,
                   p.range_min AS rangeMin, p.range_max AS rangeMax,
-                  p.sample_interval_seconds AS sampleIntervalSeconds
+                  p.sample_interval_seconds AS sampleIntervalSeconds, p.role AS role
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
-           WHERE p.range_min IS NOT NULL
-             AND p.range_max IS NOT NULL
-             AND p.sample_interval_seconds IS NOT NULL`,
+           WHERE p.sample_interval_seconds IS NOT NULL
+             AND (
+               (p.role = 'status')
+               OR (p.range_min IS NOT NULL AND p.range_max IS NOT NULL)
+             )`,
         )
         .all();
       const lastSample = db.prepare(
@@ -550,6 +703,18 @@ export function openBlondina(dbPath: string): Blondina {
           const last = lastSample.get(String(row.machineId), String(row.parameterId));
           const lastMs = last ? Date.parse(String(last.measuredAt)) : Number.NaN;
           if (Number.isFinite(lastMs) && nowMs - lastMs < intervalMs) continue;
+          const states = statesMap.get(String(row.parameterId)) ?? [];
+          if (parseParameterRole(row.role) === "status") {
+            if (states.length === 0) continue;
+            insert.run(
+              String(row.machineId),
+              String(row.parameterId),
+              now.toISOString(),
+              pickStateValue(states, random),
+            );
+            inserted += 1;
+            continue;
+          }
           const rangeMin = Number(row.rangeMin);
           const rangeMax = Number(row.rangeMax);
           const span = rangeMax - rangeMin;
@@ -616,12 +781,14 @@ export function openBlondina(dbPath: string): Blondina {
       const links = db
         .prepare(
           `SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
-                  p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax, p.color AS color
+                  p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax,
+                  p.color AS color, p.role AS role
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
            ORDER BY p.label`,
         )
         .all();
+      const statesMap = loadStatesMap(db);
       const since = new Date(Date.now() - windowMs).toISOString();
       const samples = db
         .prepare(
@@ -639,22 +806,33 @@ export function openBlondina(dbPath: string): Blondina {
           model: machine.model == null ? null : String(machine.model),
           series: links
             .filter((link) => link.machineId === machine.id)
-            .map((link) => ({
-              parameterId: String(link.parameterId),
-              label: String(link.label),
-              unit: String(link.unit ?? ""),
-              rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
-              rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
-              color: link.color == null ? null : String(link.color),
-              points: samples
-                .filter(
-                  (sample) => sample.machineId === machine.id && sample.parameterId === link.parameterId,
-                )
-                .map((sample) => ({
-                  timestamp: String(sample.timestamp),
-                  value: sample.value == null ? null : Number(sample.value),
-                })),
-            })),
+            .map((link) => {
+              const parameterId = String(link.parameterId);
+              const label = String(link.label);
+              return {
+                parameterId,
+                label,
+                unit: String(link.unit ?? ""),
+                rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
+                rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
+                color: link.color == null ? null : String(link.color),
+                role: resolveParameterRole(
+                  label,
+                  parameterId,
+                  link.role == null ? null : String(link.role),
+                ),
+                states: statesMap.get(parameterId) ?? [],
+                points: samples
+                  .filter(
+                    (sample) =>
+                      sample.machineId === machine.id && sample.parameterId === parameterId,
+                  )
+                  .map((sample) => ({
+                    timestamp: String(sample.timestamp),
+                    value: sample.value == null ? null : Number(sample.value),
+                  })),
+              };
+            }),
         })),
       };
     },

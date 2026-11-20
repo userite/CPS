@@ -78,6 +78,8 @@ describe("blondina", () => {
     const created = db.getState().parameters.find((parameter) => parameter.id === "cycle_time");
     expect(created?.machineIds).toEqual(["LATHE_02"]);
     expect(created?.color).toBeNull();
+    expect(created?.role).toBe("metric");
+    expect(created?.states).toEqual([]);
 
     db.updateParameter({ ...created!, color: "#929292" });
     expect(db.getState().parameters.find((parameter) => parameter.id === "cycle_time")?.color).toBe("#929292");
@@ -86,6 +88,23 @@ describe("blondina", () => {
     expect(() => normalizeColor("#ff0000")).toThrow(BlondinaInputError);
     expect(normalizeColor("")).toBeNull();
     expect(nextGeneratedValue(0, 0, 100, () => 0)).toBeLessThan(0);
+
+    db.createParameter({
+      id: "machine_status",
+      label: "Състояние",
+      role: "status",
+      sampleIntervalSeconds: 60,
+      states: [
+        { value: 0, label: "работи", color: "#3ddc97" },
+        { value: 1, label: "авария", color: "#e53935" },
+      ],
+      machineIds: ["LATHE_01"],
+    });
+    const status = db.getState().parameters.find((parameter) => parameter.id === "machine_status");
+    expect(status?.role).toBe("status");
+    expect(status?.states).toHaveLength(2);
+    expect(status?.rangeMin).toBe(0);
+    expect(status?.rangeMax).toBe(1);
     db.close();
   });
 
