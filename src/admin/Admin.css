@@ -9,7 +9,7 @@
 .admin-card select {
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  background: #101820;
+  background: var(--control-bg);
   color: var(--text);
   padding: 0.4rem 0.65rem;
 }
