@@ -88,6 +88,9 @@ describe("blondina", () => {
     expect(() => normalizeColor("#ff0000")).toThrow(BlondinaInputError);
     expect(normalizeColor("")).toBeNull();
     expect(nextGeneratedValue(0, 0, 100, () => 0)).toBeLessThan(0);
+    expect(nextGeneratedValue(50, 0, 100, () => 0.5)).toBe(50);
+    expect(nextGeneratedValue(5, 0, 100, () => 0.5)).toBeGreaterThanOrEqual(0);
+    expect(nextGeneratedValue(5, 0, 100, () => 0.5)).toBeLessThanOrEqual(100);
 
     db.createParameter({
       id: "machine_status",
@@ -131,6 +134,29 @@ describe("blondina", () => {
     expect(spindleChart?.points.every((point) => point.value != null && point.value >= 0 && point.value <= 1000)).toBe(
       true,
     );
+    db.close();
+  });
+
+  it("clears measurements for one selected machine only", () => {
+    const db = openBlondina(":memory:");
+    const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
+    db.updateParameter({
+      ...spindle,
+      rangeMin: 0,
+      rangeMax: 1000,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01", "LATHE_02"],
+    });
+    const period = { from: "2026-10-30T10:00:00.000Z", to: "2026-10-30T10:05:00.000Z" };
+    db.generate(period, () => 0.5);
+    expect(db.listMeasurements({ machineId: "LATHE_01", limit: 20 }).length).toBeGreaterThan(0);
+    expect(db.listMeasurements({ machineId: "LATHE_02", limit: 20 }).length).toBeGreaterThan(0);
+
+    const deleted = db.clearMeasurements("LATHE_01");
+    expect(deleted).toBeGreaterThan(0);
+    expect(db.listMeasurements({ machineId: "LATHE_01", limit: 20 })).toHaveLength(0);
+    expect(db.listMeasurements({ machineId: "LATHE_02", limit: 20 }).length).toBeGreaterThan(0);
+    expect(() => db.clearMeasurements("MISSING")).toThrow(BlondinaInputError);
     db.close();
   });
 });

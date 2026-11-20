@@ -1,9 +1,15 @@
 import { TREND_VIEW, trendXOf } from "./machineTrend";
-import type { ParameterStateDef } from "./parameterRole";
+import { resolveParameterRole, type ParameterStateDef } from "./parameterRole";
 
 export type StatusSample = {
   timestamp: string;
   value: number | null;
+};
+
+export type LatestStatus = {
+  label: string;
+  color: string;
+  value: number;
 };
 
 export type StatusSegment = {
@@ -30,6 +36,38 @@ function stateFor(value: number, states: ParameterStateDef[]): ParameterStateDef
     (a, b) => Math.abs(a.value - value) - Math.abs(b.value - value),
   )[0];
   return nearest ?? null;
+}
+
+/**
+ * Latest status sample by timestamp across status-role series.
+ * Color/label come from the matching state definition (same colors as the strip).
+ */
+export function latestStatusOf(
+  series: Array<{
+    parameterId: string;
+    label: string;
+    role?: string | null;
+    states: ParameterStateDef[];
+    points: StatusSample[];
+  }>,
+): LatestStatus | null {
+  let best: { t: number; value: number; states: ParameterStateDef[] } | null = null;
+  for (const item of series) {
+    const role = resolveParameterRole(item.label, item.parameterId, item.role);
+    if (role !== "status" || item.states.length === 0) continue;
+    for (const point of item.points) {
+      if (!point || typeof point.timestamp !== "string") continue;
+      const t = Date.parse(point.timestamp);
+      const value =
+        typeof point.value === "number" && Number.isFinite(point.value) ? point.value : null;
+      if (!Number.isFinite(t) || value == null) continue;
+      if (!best || t >= best.t) best = { t, value, states: item.states };
+    }
+  }
+  if (!best) return null;
+  const state = stateFor(best.value, best.states);
+  if (!state) return null;
+  return { label: state.label, color: state.color, value: best.value };
 }
 
 /**

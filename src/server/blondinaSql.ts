@@ -820,7 +820,20 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         })),
       };
     },
-    async clearMeasurements() {
+    async clearMeasurements(machineId) {
+      const id = machineId?.trim() ?? "";
+      if (id) {
+        const machine = await pool
+          .request()
+          .input("id", sql.NVarChar(64), id)
+          .query("SELECT id FROM dbo.cps_machine WHERE id = @id");
+        if (machine.recordset.length === 0) throw new BlondinaInputError(`Няма машина ${id}.`);
+        const result = await pool
+          .request()
+          .input("machineId", sql.NVarChar(64), id)
+          .query("DELETE FROM dbo.cps_measurement WHERE machine_id = @machineId");
+        return rowsAffected(result);
+      }
       const result = await pool.request().query("DELETE FROM dbo.cps_measurement");
       return rowsAffected(result);
     },

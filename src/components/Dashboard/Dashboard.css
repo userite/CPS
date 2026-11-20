@@ -336,8 +336,31 @@
   min-width: 0;
 }
 
+.trend-ring-block {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.trend-ring-status {
+  margin: 0;
+  max-width: 5.5rem;
+  color: var(--ring-fill, #3ddc97);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .trend-ring {
   --trend-ring-size: 4.4rem;
+  --ring-fill: #3ddc97;
   position: relative;
   flex: 0 0 auto;
   width: var(--trend-ring-size);
@@ -357,11 +380,11 @@
 }
 
 .trend-ring-track {
-  stroke: color-mix(in srgb, #3ddc97 28%, var(--card-border));
+  stroke: color-mix(in srgb, var(--ring-fill) 28%, var(--card-border));
 }
 
 .trend-ring-value {
-  stroke: #3ddc97;
+  stroke: var(--ring-fill);
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 18px 18px;
@@ -372,7 +395,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  color: #3ddc97;
+  color: var(--ring-fill);
   font-size: 0.85rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;

@@ -135,7 +135,7 @@ export type Blondina = {
   appendDueSamples: (now?: Date, random?: () => number) => number;
   readFirstObject: (windowMs: number) => FirstObjectReading;
   readDashboard: (windowMs: number) => DashboardReading;
-  clearMeasurements: () => number;
+  clearMeasurements: (machineId?: string) => number;
   listMeasurements: (filter?: { machineId?: string; limit?: number }) => MeasurementRow[];
   close: () => void;
 };
@@ -235,12 +235,23 @@ export function normalizeColor(value: unknown): string | null {
   return color.toLowerCase();
 }
 
+/** Chance a generated sample may leave [min, max] (still within ±20% slack). */
+export const GENERATED_OUTSIDE_CHANCE = 0.08;
+
+/**
+ * Random walk around the configured range. Most samples stay in-range;
+ * a small fraction may go up to 20% outside for OOR testing on the табло.
+ */
 export function nextGeneratedValue(current: number, min: number, max: number, random: () => number): number {
   const span = max - min;
   if (span === 0) return min;
   const step = current + (random() - 0.5) * span * 0.35;
-  const slack = span * 0.2;
-  return Math.min(max + slack, Math.max(min - slack, step));
+  const allowOutside = random() < GENERATED_OUTSIDE_CHANCE;
+  if (allowOutside) {
+    const slack = span * 0.2;
+    return Math.min(max + slack, Math.max(min - slack, step));
+  }
+  return Math.min(max, Math.max(min, step));
 }
 
 function machineIds(db: DatabaseSync, ids: string[]): string[] {
@@ -836,7 +847,14 @@ export function openBlondina(dbPath: string): Blondina {
         })),
       };
     },
-    clearMeasurements() {
+    clearMeasurements(machineId) {
+      const id = machineId?.trim() ?? "";
+      if (id) {
+        const machine = db.prepare("SELECT id FROM cps_machine WHERE id = ?").get(id);
+        if (!machine) throw new BlondinaInputError(`Няма машина ${id}.`);
+        const result = db.prepare("DELETE FROM cps_measurement WHERE machine_id = ?").run(id);
+        return changedRows(result);
+      }
       const result = db.prepare("DELETE FROM cps_measurement").run();
       return changedRows(result);
     },

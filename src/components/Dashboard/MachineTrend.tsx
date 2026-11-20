@@ -10,21 +10,29 @@ import {
 } from "../../domain/machineTrend";
 import { chartsOnLinear } from "../../domain/parameterRole";
 import { buildPlanProgress, type PlanProgress } from "../../domain/planProgress";
-import { buildStatusStrip, type StatusSegment } from "../../domain/statusTimeline";
+import { buildStatusStrip, latestStatusOf, type StatusSegment } from "../../domain/statusTimeline";
 import type { DashboardMachine } from "../../server/blondina";
 
 const STATUS_VIEW_H = 4;
+const RING_FALLBACK_COLOR = "#3ddc97";
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
-function PlanRing({ progress }: { progress: PlanProgress }) {
+function PlanRing({
+  progress,
+  fillColor,
+}: {
+  progress: PlanProgress;
+  fillColor: string;
+}) {
   const shown = Math.max(0, progress.percent);
   const arc = Math.min(100, shown);
   return (
     <div
       className="trend-ring"
+      style={{ ["--ring-fill" as string]: fillColor }}
       title={`${progress.reportLabel}: ${formatNumber(progress.reportSum)} / ${progress.planLabel}: ${formatNumber(progress.planValue)}`}
       aria-label={`Изпълнение ${formatNumber(shown)} процента`}
     >
@@ -86,6 +94,8 @@ export function MachineTrend({
         .filter((strip): strip is NonNullable<typeof strip> => strip != null),
     [machine.series, timeDomain],
   );
+  const latestStatus = useMemo(() => latestStatusOf(machine.series), [machine.series]);
+  const ringFill = latestStatus?.color ?? RING_FALLBACK_COLOR;
   const [hover, setHover] = useState<TrendPoint | null>(null);
   const [statusHover, setStatusHover] = useState<string | null>(null);
   const plotted = lines.some((line) => line.plotted);
@@ -240,7 +250,16 @@ export function MachineTrend({
             : "\u00a0"}
       </p>
       <div className="trend-foot">
-        {planProgress ? <PlanRing progress={planProgress} /> : null}
+        {planProgress ? (
+          <div className="trend-ring-block">
+            {latestStatus ? (
+              <p className="trend-ring-status" style={{ color: latestStatus.color }}>
+                {latestStatus.label}
+              </p>
+            ) : null}
+            <PlanRing progress={planProgress} fillColor={ringFill} />
+          </div>
+        ) : null}
         <ul className="trend-legend">
           {lines.map((line) => (
             <li key={line.parameterId}>
@@ -253,14 +272,6 @@ export function MachineTrend({
                     ? "няма данни"
                     : `${formatNumber(line.lastPercent)}%`}
                 {line.outside ? " · извън" : ""}
-              </span>
-            </li>
-          ))}
-          {statusStrips.map((strip) => (
-            <li key={`st-${strip.parameterId}`} className="trend-legend-status">
-              <span>{strip.label}</span>
-              <span className="trend-legend-value">
-                {strip.states.map((state) => state.label).join(" · ")}
               </span>
             </li>
           ))}
