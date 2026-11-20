@@ -1,10 +1,11 @@
 :root {
   color-scheme: dark;
-  --bg: #0c1218;
-  --card: #16202a;
-  --card-hover: #1c2833;
-  --card-border: #2c3b4a;
-  --card-border-hover: #466078;
+  --bg: #1a2430;
+  --bg-glow: rgba(142, 197, 255, 0.14);
+  --card: #223041;
+  --card-hover: #2a3a4d;
+  --card-border: #3a4f64;
+  --card-border-hover: #56748f;
   --text: #e8eef5;
   --text-muted: #9eb2c4;
   --focus: #8ec5ff;
@@ -25,4 +26,93 @@
   --radius: 14px;
   --font: "Segoe UI", sans-serif;
   --mono: Consolas, "Cascadia Mono", monospace;
+  --control-bg: #15202c;
+}
+
+/* Стоманено сиво — default, clearly not pure black */
+html[data-tablo-bg="slate"] {
+  color-scheme: dark;
+  --bg: #1a2430;
+  --bg-glow: rgba(142, 197, 255, 0.14);
+  --card: #223041;
+  --card-hover: #2a3a4d;
+  --card-border: #3a4f64;
+  --card-border-hover: #56748f;
+  --text: #e8eef5;
+  --text-muted: #9eb2c4;
+  --control-bg: #15202c;
+}
+
+/* Синя стомана — cooler industrial blue wash */
+html[data-tablo-bg="steel"] {
+  color-scheme: dark;
+  --bg: #132033;
+  --bg-glow: rgba(90, 170, 255, 0.22);
+  --card: #1a2d45;
+  --card-hover: #223a56;
+  --card-border: #355a7a;
+  --card-border-hover: #4d7a9e;
+  --text: #e6f0fa;
+  --text-muted: #93b4d0;
+  --control-bg: #0f1a2a;
+}
+
+/* Графит — softer charcoal */
+html[data-tablo-bg="graphite"] {
+  color-scheme: dark;
+  --bg: #2a2e34;
+  --bg-glow: rgba(200, 210, 220, 0.1);
+  --card: #353b44;
+  --card-hover: #3f4650;
+  --card-border: #555e6a;
+  --card-border-hover: #6f7a88;
+  --text: #eef1f4;
+  --text-muted: #a8b0ba;
+  --control-bg: #22262c;
+}
+
+/* Цех (топло) — warm workshop amber undertone */
+html[data-tablo-bg="shop"] {
+  color-scheme: dark;
+  --bg: #241c14;
+  --bg-glow: rgba(240, 180, 80, 0.16);
+  --card: #32281c;
+  --card-hover: #3d3122;
+  --card-border: #5a4830;
+  --card-border-hover: #7a6440;
+  --text: #f3ebe0;
+  --text-muted: #c4b09a;
+  --control-bg: #1c1610;
+}
+
+/* Тъмно (оригинал) — previous near-black look */
+html[data-tablo-bg="noir"] {
+  color-scheme: dark;
+  --bg: #0c1218;
+  --bg-glow: rgba(142, 197, 255, 0.08);
+  --card: #16202a;
+  --card-hover: #1c2833;
+  --card-border: #2c3b4a;
+  --card-border-hover: #466078;
+  --text: #e8eef5;
+  --text-muted: #9eb2c4;
+  --control-bg: #101820;
+}
+
+/* Дневно светло — bright shop / daytime */
+html[data-tablo-bg="day"] {
+  color-scheme: light;
+  --bg: #d8e2ec;
+  --bg-glow: rgba(40, 100, 180, 0.12);
+  --card: #f4f7fb;
+  --card-hover: #eaf0f6;
+  --card-border: #b7c5d4;
+  --card-border-hover: #8ea3b8;
+  --text: #1a2430;
+  --text-muted: #4d5f70;
+  --focus: #1a6fb5;
+  --shadow: 0 12px 28px rgba(30, 50, 70, 0.12);
+  --control-bg: #eef3f8;
+  --oee-track: #c5d2de;
+  --spark-last: #1a2430;
 }

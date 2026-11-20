@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import {
+  applyTabloBackground,
+  normalizeTabloBackground,
+  readStoredTabloBackground,
+  tabloBackgroundChoices,
+  tabloBackgroundDefault,
+  type TabloBackgroundId,
+  writeStoredTabloBackground,
+} from "../../config/backgrounds";
+import {
   chartWindowDomain,
   chartWindowHourChoices,
   chartWindowHoursDefault,
@@ -21,12 +30,14 @@ function readStoredHours(): number {
 
 export function Dashboard() {
   const [windowHours, setWindowHours] = useState(chartWindowHoursDefault);
+  const [background, setBackground] = useState<TabloBackgroundId>(tabloBackgroundDefault);
   const [reading, setReading] = useState<DashboardReading | null>(null);
   const [readAt, setReadAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setWindowHours(readStoredHours());
+    setBackground(readStoredTabloBackground());
   }, []);
 
   useEffect(() => {
@@ -36,6 +47,11 @@ export function Dashboard() {
       /* ignore quota / private mode */
     }
   }, [windowHours]);
+
+  useEffect(() => {
+    applyTabloBackground(background);
+    writeStoredTabloBackground(background);
+  }, [background]);
 
   useEffect(() => {
     let alive = true;
@@ -76,6 +92,20 @@ export function Dashboard() {
           <h1>Контролно табло</h1>
         </div>
         <div className="dash-side">
+          <label className="dash-window">
+            Фон
+            <select
+              value={background}
+              onChange={(event) => setBackground(normalizeTabloBackground(event.target.value))}
+              aria-label="Фон на таблото"
+            >
+              {tabloBackgroundChoices.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="dash-window">
             Последни
             <select

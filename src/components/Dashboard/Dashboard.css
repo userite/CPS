@@ -45,7 +45,7 @@
 .dash-window select {
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  background: #101820;
+  background: var(--control-bg);
   color: var(--text);
   padding: 0.2rem 0.45rem;
 }
@@ -74,7 +74,7 @@
   padding: 0.55rem 0.75rem;
   border: 1px solid var(--card-border);
   border-radius: 10px;
-  background: #121a22;
+  background: var(--control-bg);
 }
 
 .btn {
