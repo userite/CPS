@@ -107,7 +107,8 @@ export async function handleBlondinaRequest(
       return true;
     }
     if (req.method === "DELETE" && url.pathname === "/api/cps/measurements") {
-      send(res, 200, { deleted: await db.clearMeasurements() });
+      const machineId = url.searchParams.get("machineId")?.trim() || undefined;
+      send(res, 200, { deleted: await db.clearMeasurements(machineId) });
       return true;
     }
     send(res, 404, { error: "Няма такъв адрес." });

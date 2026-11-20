@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TREND_VIEW, trendXOf } from "./machineTrend";
 import { chartsOnLinear, resolveParameterRole } from "./parameterRole";
-import { buildStatusStrip } from "./statusTimeline";
+import { buildStatusStrip, latestStatusOf } from "./statusTimeline";
 
 describe("status timeline", () => {
   const states = [
@@ -48,5 +48,29 @@ describe("status timeline", () => {
     expect(chartsOnLinear("status")).toBe(false);
     expect(resolveParameterRole("Състояние", "Condition", "status")).toBe("status");
     expect(resolveParameterRole("ПЛАН", "plan", "metric")).toBe("plan");
+  });
+
+  it("picks the latest-by-time status label and color", () => {
+    const latest = latestStatusOf([
+      {
+        parameterId: "speed",
+        label: "Скорост",
+        role: "metric",
+        states: [],
+        points: [{ timestamp: "2026-11-20T09:00:00.000Z", value: 10 }],
+      },
+      {
+        parameterId: "Condition",
+        label: "Състояние",
+        role: "status",
+        states,
+        points: [
+          { timestamp: "2026-11-20T08:00:00.000Z", value: 0 },
+          { timestamp: "2026-11-20T09:00:00.000Z", value: 1 },
+          { timestamp: "2026-11-20T08:30:00.000Z", value: 2 },
+        ],
+      },
+    ]);
+    expect(latest).toEqual({ label: "авария", color: "#e53935", value: 1 });
   });
 });

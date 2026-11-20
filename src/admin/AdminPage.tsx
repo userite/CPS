@@ -613,8 +613,9 @@ export function AdminPage() {
           >
             <h2>Генератор на измервания</h2>
             <p className="admin-muted">
-              За всяка машина и параметър с диапазон и честота се записват стойности около диапазона,
-              включително до 20% извън границите. Няма производствена формула. Липсващ диапазон не се заменя с нула.
+              За всяка машина и параметър с диапазон и честота се записват стойности около диапазона.
+              Повечето проби остават в границите; рядко (около 8%) могат да излязат до 20% извън тях за тест.
+              Няма производствена формула. Липсващ диапазон не се заменя с нула.
             </p>
             <div className="admin-pair">
               <label>
@@ -635,12 +636,12 @@ export function AdminPage() {
                   if (!window.confirm("Да се изтрият ли всички измервания?")) return;
                   void run(async () => {
                     await request("/api/cps/measurements", { method: "DELETE" });
-                    setReport("Измерванията са изчистени.");
+                    setReport("Всички измервания са изчистени.");
                     await reload();
                   });
                 }}
               >
-                Изчисти измерванията
+                Изчисти всички измервания
               </button>
             </div>
             {report && <p>{report}</p>}
@@ -665,6 +666,37 @@ export function AdminPage() {
                   ))}
                 </select>
               </label>
+              <button
+                type="button"
+                className="btn"
+                disabled={!measurementMachine}
+                title={
+                  measurementMachine
+                    ? "Изтрива само измерванията на избраната машина"
+                    : "Изберете машина от списъка"
+                }
+                onClick={() => {
+                  if (!measurementMachine) return;
+                  const machineName =
+                    state?.machines.find((machine) => machine.id === measurementMachine)?.name ??
+                    measurementMachine;
+                  if (!window.confirm(`Да се изтрият ли измерванията само за „${machineName}“?`)) {
+                    return;
+                  }
+                  void run(async () => {
+                    const result = await request<{ deleted: number }>(
+                      `/api/cps/measurements?machineId=${encodeURIComponent(measurementMachine)}`,
+                      { method: "DELETE" },
+                    );
+                    setReport(
+                      `Изчистени ${result.deleted} измервания за „${machineName}“.`,
+                    );
+                    await reload(measurementMachine);
+                  });
+                }}
+              >
+                Изчисти данните на машината
+              </button>
             </div>
             <table className="admin-table">
               <thead>
