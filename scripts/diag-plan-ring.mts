@@ -1,4 +1,4 @@
-import { chartWindowMinutes } from "../src/config/dashboard.ts";
+import { chartWindowHoursDefault } from "../src/config/dashboard.ts";
 import { buildPlanProgress, parameterPlanRole } from "../src/domain/planProgress.ts";
 import { loadBlondinaSqlConfig, openBlondinaSql } from "../src/server/blondinaSql.ts";
 
@@ -23,7 +23,7 @@ for (const parameter of state.parameters) {
   );
 }
 
-const dash = await db.readDashboard(chartWindowMinutes * 60_000);
+const dash = await db.readDashboard(chartWindowHoursDefault * 60 * 60_000);
 for (const machine of dash.machines) {
   const progress = buildPlanProgress(
     machine.series,

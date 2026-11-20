@@ -5,7 +5,6 @@ import {
   TREND_VIEW,
   buildMachineTrend,
   guideY,
-  resolveTimeDomain,
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
@@ -52,19 +51,12 @@ function statusHoverText(segment: StatusSegment): string {
 export function MachineTrend({
   machine,
   orderedIds,
+  timeDomain,
 }: {
   machine: DashboardMachine;
   orderedIds: string[];
+  timeDomain: { tMin: number; tMax: number };
 }) {
-  const timeDomain = useMemo(() => {
-    const times = machine.series.flatMap((series) =>
-      series.points
-        .map((point) => Date.parse(point.timestamp))
-        .filter((time) => Number.isFinite(time)),
-    );
-    return resolveTimeDomain(times);
-  }, [machine.series]);
-
   const chartSeries = useMemo(
     () => machine.series.filter((series) => chartsOnLinear(series.role)),
     [machine.series],
@@ -77,33 +69,28 @@ export function MachineTrend({
     () => buildPlanProgress(machine.series, orderedIds),
     [machine.series, orderedIds],
   );
-  const statusStrips = useMemo(() => {
-    if (!timeDomain) return [];
-    return machine.series
-      .filter((series) => series.role === "status")
-      .map((series) =>
-        buildStatusStrip(
-          series.parameterId,
-          series.label,
-          series.states,
-          series.points,
-          timeDomain.tMin,
-          timeDomain.tMax,
-        ),
-      )
-      .filter((strip): strip is NonNullable<typeof strip> => strip != null);
-  }, [machine.series, timeDomain]);
+  const statusStrips = useMemo(
+    () =>
+      machine.series
+        .filter((series) => series.role === "status")
+        .map((series) =>
+          buildStatusStrip(
+            series.parameterId,
+            series.label,
+            series.states,
+            series.points,
+            timeDomain.tMin,
+            timeDomain.tMax,
+          ),
+        )
+        .filter((strip): strip is NonNullable<typeof strip> => strip != null),
+    [machine.series, timeDomain],
+  );
   const [hover, setHover] = useState<TrendPoint | null>(null);
   const [statusHover, setStatusHover] = useState<string | null>(null);
   const plotted = lines.some((line) => line.plotted);
-  const stamps = [
-    ...lines.flatMap((line) => line.segments.flat().map((point) => point.timestamp)),
-    ...statusStrips.flatMap((strip) => strip.segments.map((segment) => segment.start)),
-  ]
-    .filter((stamp) => Number.isFinite(Date.parse(stamp)))
-    .sort();
-  const timeStart = stamps[0] ?? (timeDomain ? new Date(timeDomain.tMin).toISOString() : null);
-  const timeEnd = stamps[stamps.length - 1] ?? (timeDomain ? new Date(timeDomain.tMax).toISOString() : null);
+  const timeStart = new Date(timeDomain.tMin).toISOString();
+  const timeEnd = new Date(timeDomain.tMax).toISOString();
   const summary = lines
     .map((line) => {
       if (!line.plotted || line.lastPercent == null) return `${line.label}: няма скала или данни`;

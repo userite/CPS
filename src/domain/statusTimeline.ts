@@ -58,7 +58,7 @@ export function buildStatusStrip(
     })
     .filter(
       (point): point is { timestamp: string; t: number; value: number } =>
-        point.t != null && point.value != null,
+        point.t != null && point.value != null && point.t >= tMin && point.t <= tMax,
     )
     .sort((a, b) => a.t - b.t);
   if (samples.length === 0) return null;

@@ -35,6 +35,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+.dash-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+}
+
+.dash-window select {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: #101820;
+  color: var(--text);
+  padding: 0.2rem 0.45rem;
+}
+
 .mode-pill {
   border: 1px solid var(--status-setup);
   border-radius: 999px;
