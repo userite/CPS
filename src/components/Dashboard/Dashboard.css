@@ -256,33 +256,31 @@
   --trend-ring-size: 4.4rem;
   /* Match the green ring stroke: 5.5 units in a 36 viewBox on the 4.4rem ring. */
   --trend-ring-stroke: calc(var(--trend-ring-size) * 5.5 / 36);
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.2rem;
+  display: contents;
 }
 
 .trend-status-label {
+  grid-column: 1;
   color: var(--text-muted);
   font-size: 0.58rem;
+  line-height: var(--trend-ring-stroke);
   white-space: nowrap;
-}
-
-.trend-status-cells {
-  display: flex;
-  gap: 1px;
-  min-width: 0;
-  height: var(--trend-ring-stroke);
   overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  align-self: center;
 }
 
-.trend-status-cells i {
-  flex: 1 1 0;
-  min-width: 0.28rem;
-  height: 100%;
-  border-radius: 1px;
+.trend-status-svg {
+  display: block;
+  grid-column: 2;
+  width: 100%;
+  height: var(--trend-ring-stroke);
+  margin-top: 0.2rem;
+}
+
+.trend-status-seg {
+  cursor: crosshair;
 }
 
 .trend-guide {

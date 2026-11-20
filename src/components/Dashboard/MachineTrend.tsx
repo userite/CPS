@@ -5,13 +5,16 @@ import {
   TREND_VIEW,
   buildMachineTrend,
   guideY,
+  resolveTimeDomain,
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
 import { chartsOnLinear } from "../../domain/parameterRole";
 import { buildPlanProgress, type PlanProgress } from "../../domain/planProgress";
-import { buildStatusStrip } from "../../domain/statusTimeline";
+import { buildStatusStrip, type StatusSegment } from "../../domain/statusTimeline";
 import type { DashboardMachine } from "../../server/blondina";
+
+const STATUS_VIEW_H = 4;
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
@@ -42,6 +45,10 @@ function PlanRing({ progress }: { progress: PlanProgress }) {
   );
 }
 
+function statusHoverText(segment: StatusSegment): string {
+  return `${segment.label} · ${formatTime(segment.start)}`;
+}
+
 export function MachineTrend({
   machine,
   orderedIds,
@@ -49,39 +56,54 @@ export function MachineTrend({
   machine: DashboardMachine;
   orderedIds: string[];
 }) {
+  const timeDomain = useMemo(() => {
+    const times = machine.series.flatMap((series) =>
+      series.points
+        .map((point) => Date.parse(point.timestamp))
+        .filter((time) => Number.isFinite(time)),
+    );
+    return resolveTimeDomain(times);
+  }, [machine.series]);
+
   const chartSeries = useMemo(
     () => machine.series.filter((series) => chartsOnLinear(series.role)),
     [machine.series],
   );
   const { lines, frameMin, frameMax } = useMemo(
-    () => buildMachineTrend(chartSeries, orderedIds),
-    [chartSeries, orderedIds],
+    () => buildMachineTrend(chartSeries, orderedIds, timeDomain),
+    [chartSeries, orderedIds, timeDomain],
   );
   const planProgress = useMemo(
     () => buildPlanProgress(machine.series, orderedIds),
     [machine.series, orderedIds],
   );
-  const statusStrips = useMemo(
-    () =>
-      machine.series
-        .filter((series) => series.role === "status")
-        .map((series) =>
-          buildStatusStrip(series.parameterId, series.label, series.states, series.points),
-        )
-        .filter((strip): strip is NonNullable<typeof strip> => strip != null),
-    [machine.series],
-  );
+  const statusStrips = useMemo(() => {
+    if (!timeDomain) return [];
+    return machine.series
+      .filter((series) => series.role === "status")
+      .map((series) =>
+        buildStatusStrip(
+          series.parameterId,
+          series.label,
+          series.states,
+          series.points,
+          timeDomain.tMin,
+          timeDomain.tMax,
+        ),
+      )
+      .filter((strip): strip is NonNullable<typeof strip> => strip != null);
+  }, [machine.series, timeDomain]);
   const [hover, setHover] = useState<TrendPoint | null>(null);
   const [statusHover, setStatusHover] = useState<string | null>(null);
   const plotted = lines.some((line) => line.plotted);
   const stamps = [
     ...lines.flatMap((line) => line.segments.flat().map((point) => point.timestamp)),
-    ...statusStrips.flatMap((strip) => strip.cells.map((cell) => cell.timestamp)),
+    ...statusStrips.flatMap((strip) => strip.segments.map((segment) => segment.start)),
   ]
     .filter((stamp) => Number.isFinite(Date.parse(stamp)))
     .sort();
-  const timeStart = stamps[0];
-  const timeEnd = stamps[stamps.length - 1];
+  const timeStart = stamps[0] ?? (timeDomain ? new Date(timeDomain.tMin).toISOString() : null);
+  const timeEnd = stamps[stamps.length - 1] ?? (timeDomain ? new Date(timeDomain.tMax).toISOString() : null);
   const summary = lines
     .map((line) => {
       if (!line.plotted || line.lastPercent == null) return `${line.label}: няма скала или данни`;
@@ -184,19 +206,31 @@ export function MachineTrend({
           <div className="trend-svg trend-svg-spacer" aria-hidden="true" />
         )}
         {statusStrips.map((strip) => (
-          <div key={strip.parameterId} className="trend-status" aria-label={strip.label}>
+          <div key={strip.parameterId} className="trend-status">
             <span className="trend-status-label">{strip.label}</span>
-            <div className="trend-status-cells">
-              {strip.cells.map((cell) => (
-                <i
-                  key={`${strip.parameterId}-${cell.timestamp}`}
-                  style={{ background: cell.color }}
-                  title={`${cell.label} · ${formatTime(cell.timestamp)}`}
-                  onMouseEnter={() => setStatusHover(`${cell.label} · ${formatTime(cell.timestamp)}`)}
-                  onMouseLeave={() => setStatusHover(null)}
-                />
+            <svg
+              className="trend-status-svg"
+              viewBox={`0 0 ${TREND_VIEW.w} ${STATUS_VIEW_H}`}
+              preserveAspectRatio="none"
+              role="img"
+              aria-label={strip.label}
+              onMouseLeave={() => setStatusHover(null)}
+            >
+              {strip.segments.map((segment) => (
+                <rect
+                  key={`${strip.parameterId}-${segment.start}`}
+                  className="trend-status-seg"
+                  x={segment.x}
+                  y="0.4"
+                  width={segment.width}
+                  height={STATUS_VIEW_H - 0.8}
+                  fill={segment.color}
+                  onMouseEnter={() => setStatusHover(statusHoverText(segment))}
+                >
+                  <title>{statusHoverText(segment)}</title>
+                </rect>
               ))}
-            </div>
+            </svg>
           </div>
         ))}
         {timeStart && timeEnd && (

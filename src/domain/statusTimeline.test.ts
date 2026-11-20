@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TREND_VIEW, trendXOf } from "./machineTrend";
 import { chartsOnLinear, resolveParameterRole } from "./parameterRole";
 import { buildStatusStrip } from "./statusTimeline";
 
@@ -9,18 +10,35 @@ describe("status timeline", () => {
     { value: 2, label: "технологичен престой", color: "#f0b429" },
   ];
 
-  it("builds colored cells from discrete samples", () => {
-    const strip = buildStatusStrip("Condition", "Състояние", states, [
-      { timestamp: "2026-11-20T08:00:00.000Z", value: 0 },
-      { timestamp: "2026-11-20T08:01:00.000Z", value: 1 },
-      { timestamp: "2026-11-20T08:02:00.000Z", value: 2 },
-    ]);
-    expect(strip?.cells.map((cell) => cell.label)).toEqual([
+  it("places segments on the same X domain as the line chart", () => {
+    const tMin = Date.parse("2026-11-20T08:00:00.000Z");
+    const tMax = Date.parse("2026-11-20T08:02:00.000Z");
+    const strip = buildStatusStrip(
+      "Condition",
+      "Състояние",
+      states,
+      [
+        { timestamp: "2026-11-20T08:00:00.000Z", value: 0 },
+        { timestamp: "2026-11-20T08:01:00.000Z", value: 1 },
+        { timestamp: "2026-11-20T08:02:00.000Z", value: 2 },
+      ],
+      tMin,
+      tMax,
+    );
+    expect(strip?.segments).toHaveLength(3);
+    expect(strip?.segments[0]?.x).toBeCloseTo(trendXOf(tMin, tMin, tMax));
+    expect(strip?.segments[1]?.x).toBeCloseTo(
+      trendXOf(Date.parse("2026-11-20T08:01:00.000Z"), tMin, tMax),
+    );
+    expect(strip?.segments[0]?.width).toBeCloseTo(strip!.segments[1]!.x - strip!.segments[0]!.x);
+    const last = strip!.segments[2]!;
+    expect(last.x + last.width).toBeLessThanOrEqual(TREND_VIEW.w - 2 + 0.001);
+    expect(last.x + last.width).toBeGreaterThan(TREND_VIEW.w - 3);
+    expect(strip?.segments.map((segment) => segment.label)).toEqual([
       "работи",
       "авария",
       "технологичен престой",
     ]);
-    expect(strip?.cells.map((cell) => cell.color)).toEqual(["#3ddc97", "#e53935", "#f0b429"]);
   });
 
   it("keeps plan/report/status off the linear chart", () => {

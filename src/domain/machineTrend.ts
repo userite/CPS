@@ -58,7 +58,21 @@ export type MachineTrendModel = {
   lines: TrendLine[];
   frameMin: number;
   frameMax: number;
+  tMin: number | null;
+  tMax: number | null;
 };
+
+/** Same horizontal padding as the line chart (2 … w-2). */
+export function trendXOf(t: number, tMin: number, tMax: number): number {
+  if (tMax === tMin) return TREND_VIEW.w / 2;
+  return 2 + ((t - tMin) / (tMax - tMin)) * (TREND_VIEW.w - 4);
+}
+
+export function resolveTimeDomain(times: number[]): { tMin: number; tMax: number } | null {
+  const finite = times.filter((time) => Number.isFinite(time));
+  if (finite.length === 0) return null;
+  return { tMin: Math.min(...finite), tMax: Math.max(...finite) };
+}
 
 export function rangePercent(value: number, min: number, max: number): number {
   const span = max - min;
@@ -132,7 +146,11 @@ export function splitOutsideRuns(segment: TrendPoint[]): { points: TrendPoint[];
   return runs;
 }
 
-export function buildMachineTrend(series: TrendSeriesInput[], orderedIds: string[]): MachineTrendModel {
+export function buildMachineTrend(
+  series: TrendSeriesInput[],
+  orderedIds: string[],
+  sharedDomain?: { tMin: number; tMax: number } | null,
+): MachineTrendModel {
   type Draft = {
     item: TrendSeriesInput;
     color: string;
@@ -173,6 +191,15 @@ export function buildMachineTrend(series: TrendSeriesInput[], orderedIds: string
 
   const { frameMin, frameMax } = resolveFrame(drafts.flatMap((draft) => draft.percents));
   const yOf = (percent: number) => yOfPercent(percent, frameMin, frameMax);
+  const domain =
+    sharedDomain ??
+    resolveTimeDomain(drafts.flatMap((draft) => draft.finite.map((point) => point.t)));
+  const tMin = domain?.tMin ?? null;
+  const tMax = domain?.tMax ?? null;
+  const xOf = (t: number) => {
+    if (tMin == null || tMax == null) return TREND_VIEW.w / 2;
+    return trendXOf(t, tMin, tMax);
+  };
 
   const lines: TrendLine[] = drafts.map((draft) => {
     const { item, color, hasRange, parsed, finite } = draft;
@@ -192,12 +219,6 @@ export function buildMachineTrend(series: TrendSeriesInput[], orderedIds: string
     }
     const min = item.rangeMin as number;
     const max = item.rangeMax as number;
-    const tMin = finite[0]?.t;
-    const tMax = finite[finite.length - 1]?.t;
-    const xOf = (t: number) => {
-      if (tMin == null || tMax == null || tMax === tMin) return TREND_VIEW.w / 2;
-      return 2 + ((t - tMin) / (tMax - tMin)) * (TREND_VIEW.w - 4);
-    };
 
     const segments: TrendPoint[][] = [];
     let current: TrendPoint[] = [];
@@ -238,5 +259,5 @@ export function buildMachineTrend(series: TrendSeriesInput[], orderedIds: string
     };
   });
 
-  return { lines, frameMin, frameMax };
+  return { lines, frameMin, frameMax, tMin, tMax };
 }
