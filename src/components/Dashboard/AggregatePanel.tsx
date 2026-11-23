@@ -18,7 +18,9 @@ import {
 import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
 
 const AGGREGATE_VIEW = { w: TREND_VIEW.w, h: 48 };
-const TICK_MARK_TOP = TREND_VIEW.h - 1.6;
+/** X baseline near the bottom of the plot (pre-scale TREND_VIEW coords). */
+const X_AXIS_Y = TREND_VIEW.h - 0.35;
+const X_TICK_LEN = 1.1;
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
@@ -223,14 +225,23 @@ export function AggregatePanel({
                   <g transform={`scale(1 ${scaleY})`}>
                     <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
                     <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y100} y2={y100} />
+                    <line
+                      className="agg-xaxis"
+                      x1="0"
+                      x2={TREND_VIEW.w}
+                      y1={X_AXIS_Y}
+                      y2={X_AXIS_Y}
+                      vectorEffect="non-scaling-stroke"
+                    />
                     {xTicks.map((tick) => (
                       <line
                         key={`xtick-${tick.t}`}
                         className="agg-xtick-mark"
                         x1={tick.x}
                         x2={tick.x}
-                        y1={TICK_MARK_TOP}
-                        y2={TREND_VIEW.h}
+                        y1={X_AXIS_Y - X_TICK_LEN}
+                        y2={X_AXIS_Y}
+                        vectorEffect="non-scaling-stroke"
                       />
                     ))}
                     {lines.map((line) =>
