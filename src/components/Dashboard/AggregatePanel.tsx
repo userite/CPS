@@ -18,9 +18,13 @@ import {
 import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
 
 const AGGREGATE_VIEW = { w: TREND_VIEW.w, h: 48 };
-/** X baseline near the bottom of the plot (pre-scale TREND_VIEW coords). */
-const X_AXIS_Y = TREND_VIEW.h - 0.35;
+/** Axes meet at bottom-left origin (pre-scale TREND_VIEW coords). */
+const AXIS_ORIGIN_X = 2;
+const AXIS_ORIGIN_Y = TREND_VIEW.h - 0.35;
+const AXIS_TOP_Y = 2;
+const AXIS_RIGHT_X = TREND_VIEW.w - 2;
 const X_TICK_LEN = 1.1;
+const Y_TICK_LEN = 1.1;
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
@@ -223,14 +227,38 @@ export function AggregatePanel({
                   onMouseLeave={() => setHover(null)}
                 >
                   <g transform={`scale(1 ${scaleY})`}>
-                    <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
-                    <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y100} y2={y100} />
+                    <line className="trend-guide" x1={AXIS_ORIGIN_X} x2={AXIS_RIGHT_X} y1={y0} y2={y0} />
+                    <line className="trend-guide" x1={AXIS_ORIGIN_X} x2={AXIS_RIGHT_X} y1={y100} y2={y100} />
+                    <line
+                      className="agg-yaxis-line"
+                      x1={AXIS_ORIGIN_X}
+                      x2={AXIS_ORIGIN_X}
+                      y1={AXIS_TOP_Y}
+                      y2={AXIS_ORIGIN_Y}
+                      vectorEffect="non-scaling-stroke"
+                    />
                     <line
                       className="agg-xaxis"
-                      x1="0"
-                      x2={TREND_VIEW.w}
-                      y1={X_AXIS_Y}
-                      y2={X_AXIS_Y}
+                      x1={AXIS_ORIGIN_X}
+                      x2={AXIS_RIGHT_X}
+                      y1={AXIS_ORIGIN_Y}
+                      y2={AXIS_ORIGIN_Y}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <line
+                      className="agg-ytick-mark"
+                      x1={AXIS_ORIGIN_X}
+                      x2={AXIS_ORIGIN_X + Y_TICK_LEN}
+                      y1={y100}
+                      y2={y100}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <line
+                      className="agg-ytick-mark"
+                      x1={AXIS_ORIGIN_X}
+                      x2={AXIS_ORIGIN_X + Y_TICK_LEN}
+                      y1={y0}
+                      y2={y0}
                       vectorEffect="non-scaling-stroke"
                     />
                     {xTicks.map((tick) => (
@@ -239,8 +267,8 @@ export function AggregatePanel({
                         className="agg-xtick-mark"
                         x1={tick.x}
                         x2={tick.x}
-                        y1={X_AXIS_Y - X_TICK_LEN}
-                        y2={X_AXIS_Y}
+                        y1={AXIS_ORIGIN_Y - X_TICK_LEN}
+                        y2={AXIS_ORIGIN_Y}
                         vectorEffect="non-scaling-stroke"
                       />
                     ))}

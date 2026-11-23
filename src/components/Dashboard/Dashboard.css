@@ -565,7 +565,7 @@
   display: grid;
   grid-template-columns: 2.3rem minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
-  column-gap: 0.25rem;
+  column-gap: 0.15rem;
   flex: 1 1 auto;
   min-height: 10rem;
   width: 100%;
@@ -612,12 +612,14 @@
   align-self: stretch;
 }
 
-.agg-xaxis {
+.agg-xaxis,
+.agg-yaxis-line {
   stroke: var(--card-border);
   stroke-width: 1;
 }
 
-.agg-xtick-mark {
+.agg-xtick-mark,
+.agg-ytick-mark {
   stroke: var(--text-muted);
   stroke-width: 0.75;
 }
