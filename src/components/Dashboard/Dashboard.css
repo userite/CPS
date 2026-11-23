@@ -612,9 +612,29 @@
   align-self: stretch;
 }
 
-.agg-time {
+.agg-xtick-mark {
+  stroke: var(--card-border);
+  stroke-width: 0.35;
+}
+
+.agg-xticks {
+  position: relative;
   grid-column: 2;
   flex: none;
+  height: 0.95rem;
+  margin-top: 0.1rem;
+}
+
+.agg-xtick-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .agg-readout {

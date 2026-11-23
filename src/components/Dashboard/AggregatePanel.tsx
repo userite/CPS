@@ -5,6 +5,7 @@ import {
   type AggregateParamInput,
 } from "../../domain/aggregateAcrossMachines";
 import { AGGREGATE_METHOD_LABELS } from "../../domain/aggregateMethod";
+import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
   OUT_OF_RANGE_COLOR,
@@ -17,6 +18,7 @@ import {
 import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
 
 const AGGREGATE_VIEW = { w: TREND_VIEW.w, h: 48 };
+const TICK_MARK_TOP = TREND_VIEW.h - 1.6;
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
@@ -139,8 +141,10 @@ export function AggregatePanel({
   const plotted = lines.some((line) => line.plotted);
   const y0 = guideY(0, frameMin, frameMax);
   const y100 = guideY(100, frameMin, frameMax);
-  const timeStart = new Date(timeDomain.tMin).toISOString();
-  const timeEnd = new Date(timeDomain.tMax).toISOString();
+  const xTicks = useMemo(
+    () => chartTimeTicks(timeDomain.tMin, timeDomain.tMax),
+    [timeDomain.tMin, timeDomain.tMax],
+  );
   const scaleY = AGGREGATE_VIEW.h / TREND_VIEW.h;
   /** One selected param → Y shows real range values, not %. */
   const valueAxis = aggregateSeries.length === 1 ? aggregateSeries[0] : null;
@@ -219,6 +223,16 @@ export function AggregatePanel({
                   <g transform={`scale(1 ${scaleY})`}>
                     <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
                     <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y100} y2={y100} />
+                    {xTicks.map((tick) => (
+                      <line
+                        key={`xtick-${tick.t}`}
+                        className="agg-xtick-mark"
+                        x1={tick.x}
+                        x2={tick.x}
+                        y1={TICK_MARK_TOP}
+                        y2={TREND_VIEW.h}
+                      />
+                    ))}
                     {lines.map((line) =>
                       line.segments.flatMap((segment, segmentIndex) =>
                         splitOutsideRuns(segment).map((run, runIndex) => {
@@ -271,10 +285,17 @@ export function AggregatePanel({
                     )}
                   </g>
                 </svg>
-                <p className="trend-time agg-time">
-                  <time dateTime={timeStart}>{formatTime(timeStart)}</time>
-                  <time dateTime={timeEnd}>{formatTime(timeEnd)}</time>
-                </p>
+                <div className="agg-xticks" aria-hidden="true">
+                  {xTicks.map((tick) => (
+                    <span
+                      key={`xlabel-${tick.t}`}
+                      className="agg-xtick-label"
+                      style={{ left: `${(tick.x / TREND_VIEW.w) * 100}%` }}
+                    >
+                      {tick.label}
+                    </span>
+                  ))}
+                </div>
               </div>
               <p className="agg-readout">
                 {hover
