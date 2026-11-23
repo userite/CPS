@@ -17,6 +17,7 @@ import {
   readerIntervalMs,
 } from "../../config/dashboard";
 import type { DashboardReading } from "../../server/blondina";
+import { AggregatePanel } from "./AggregatePanel";
 import { MachineTrend } from "./MachineTrend";
 import "./Dashboard.css";
 
@@ -139,6 +140,13 @@ export function Dashboard() {
           />
         ))}
       </section>
+      {reading && (
+        <AggregatePanel
+          machines={reading.machines}
+          orderedIds={orderedIds}
+          timeDomain={timeDomain}
+        />
+      )}
     </main>
   );
 }

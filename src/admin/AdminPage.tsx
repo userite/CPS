@@ -1,4 +1,10 @@
 import { useEffect, useState } from "react";
+import {
+  AGGREGATE_METHODS,
+  AGGREGATE_METHOD_LABELS,
+  defaultAggregateMethod,
+  type AggregateMethod,
+} from "../domain/aggregateMethod";
 import { DEFAULT_STATUS_STATES, type ParameterRole } from "../domain/parameterRole";
 import type {
   BlondinaState,
@@ -34,6 +40,7 @@ type ParameterDraft = {
   sampleIntervalSeconds: string;
   color: string;
   role: ParameterRole;
+  aggregateMethod: AggregateMethod;
   states: StateDraft[];
   machineIds: string[];
 };
@@ -48,6 +55,7 @@ const emptyParameter: ParameterDraft = {
   sampleIntervalSeconds: "",
   color: "",
   role: "metric",
+  aggregateMethod: "avg",
   states: DEFAULT_STATUS_STATES.map((state) => ({
     value: String(state.value),
     label: state.label,
@@ -145,6 +153,7 @@ export function AdminPage() {
         parameter.sampleIntervalSeconds == null ? "" : String(parameter.sampleIntervalSeconds),
       color: parameter.color ?? "",
       role: parameter.role,
+      aggregateMethod: parameter.aggregateMethod,
       states:
         parameter.states.length > 0
           ? parameter.states.map((state) => ({
@@ -174,6 +183,9 @@ export function AdminPage() {
         <span className="admin-path">cps_parameter_state</span>, <span className="admin-path">cps_machine_parameter</span> и{" "}
         <span className="admin-path">cps_measurement</span>.
         Ролята казва дали параметърът е за линейна графика, план/отчет или статусна лента на таблото.
+        Полето <span className="admin-path">aggregate_method</span> задава как се комбинира стойността
+        през всички машини в долната обща графика (sum / avg / last / min / max / count).
+        Ако не е зададено: sum за бройни параметри, иначе avg.
       </p>
       {error && <p className="admin-error">{error}</p>}
       <div className="admin-tabs" role="tablist">
@@ -314,6 +326,8 @@ export function AdminPage() {
                     sampleIntervalSeconds: optionalNumber(parameterDraft.sampleIntervalSeconds),
                     color: parameterDraft.color,
                     role: parameterDraft.role,
+                    aggregateMethod:
+                      parameterDraft.role === "status" ? null : parameterDraft.aggregateMethod,
                     states:
                       parameterDraft.role === "status"
                         ? parameterDraft.states.map((state) => ({
@@ -372,6 +386,56 @@ export function AdminPage() {
             </p>
             {parameterDraft.role !== "status" ? (
               <>
+                <label>
+                  Агрегиране през машини
+                  <select
+                    value={parameterDraft.aggregateMethod}
+                    onChange={(event) =>
+                      setParameterDraft({
+                        ...parameterDraft,
+                        aggregateMethod: event.target.value as AggregateMethod,
+                      })
+                    }
+                    aria-label="Метод за агрегиране през машини"
+                  >
+                    {AGGREGATE_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {AGGREGATE_METHOD_LABELS[method]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="admin-muted">
+                  Поле <span className="admin-path">aggregate_method</span> за долната обща графика на
+                  таблото. Ако в базата е празно: sum за бройни (count / брой / детайли), иначе avg.{" "}
+                  Предложение според името:{" "}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setParameterDraft({
+                        ...parameterDraft,
+                        aggregateMethod: defaultAggregateMethod(
+                          parameterDraft.label || parameterDraft.id,
+                          parameterDraft.id,
+                          parameterDraft.unit,
+                        ),
+                      })
+                    }
+                  >
+                    {
+                      AGGREGATE_METHOD_LABELS[
+                        defaultAggregateMethod(
+                          parameterDraft.label || parameterDraft.id,
+                          parameterDraft.id,
+                          parameterDraft.unit,
+                        )
+                      ]
+                    }
+                  </button>
+                  . Методи: sum, avg, last (най-късен sample в кофата), min, max, count (брой машини с
+                  валидна стойност).
+                </p>
                 <label>
                   Единица
                   <input
@@ -529,6 +593,7 @@ export function AdminPage() {
                 <tr>
                   <th>Параметър</th>
                   <th>Роля</th>
+                  <th>Агрегиране</th>
                   <th>Диапазон / състояния</th>
                   <th>Честота</th>
                   <th>Машини</th>
@@ -550,6 +615,11 @@ export function AdminPage() {
                       </div>
                     </td>
                     <td>{ROLE_LABELS[parameter.role]}</td>
+                    <td>
+                      {parameter.role === "status"
+                        ? "—"
+                        : AGGREGATE_METHOD_LABELS[parameter.aggregateMethod]}
+                    </td>
                     <td>
                       {parameter.role === "status"
                         ? parameter.states

@@ -23,6 +23,8 @@ function machineWithOor(): DashboardMachine {
         rangeMax: 100,
         color: "#7ec8ff",
         role: "metric",
+        aggregateMethod: "avg",
+        sampleIntervalSeconds: 60,
         states: [],
         points: [
           { timestamp: t0, value: 40 },

@@ -9,10 +9,17 @@ import {
   rangeFromStates,
 } from "../domain/normalizeParameterStates";
 import {
+  asAggregateMethod,
+  resolveAggregateMethod,
+  type AggregateMethod,
+} from "../domain/aggregateMethod";
+import {
   resolveParameterRole,
   type ParameterRole,
   type ParameterStateDef,
 } from "../domain/parameterRole";
+
+export type { AggregateMethod };
 
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,40}$/;
 const MAX_GENERATED_ROWS = 20_000;
@@ -38,6 +45,8 @@ export type ParameterInput = {
   sampleIntervalSeconds?: number | null;
   color?: string | null;
   role?: ParameterRole | string | null;
+  /** Cross-machine aggregate on the табло panel. Null → inferred default. */
+  aggregateMethod?: AggregateMethod | string | null;
   states?: ParameterStateDef[];
   machineIds: string[];
 };
@@ -59,6 +68,7 @@ export type ParameterRow = {
   sampleIntervalSeconds: number | null;
   color: string | null;
   role: ParameterRole;
+  aggregateMethod: AggregateMethod;
   states: ParameterStateDef[];
   machineIds: string[];
 };
@@ -106,6 +116,8 @@ export type DashboardSeries = {
   rangeMax: number | null;
   color: string | null;
   role: ParameterRole;
+  aggregateMethod: AggregateMethod;
+  sampleIntervalSeconds: number | null;
   states: ParameterStateDef[];
   points: Array<{ timestamp: string; value: number | null }>;
 };
@@ -315,6 +327,27 @@ function ensureRoleAndStates(db: DatabaseSync): void {
   `);
 }
 
+function ensureAggregateMethodColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(cps_parameter)").all();
+  if (columns.some((column) => column.name === "aggregate_method")) return;
+  db.exec("ALTER TABLE cps_parameter ADD COLUMN aggregate_method TEXT");
+}
+
+function normalizeAggregateMethodWrite(
+  value: unknown,
+  role: ParameterRole,
+): AggregateMethod | null {
+  if (role === "status") return null;
+  if (value == null || String(value).trim() === "") return null;
+  const method = asAggregateMethod(value);
+  if (!method) {
+    throw new BlondinaInputError(
+      "Агрегирането трябва да е sum, avg, last, min, max или count.",
+    );
+  }
+  return method;
+}
+
 function replaceStates(db: DatabaseSync, parameterId: string, states: ParameterStateDef[]): void {
   db.prepare("DELETE FROM cps_parameter_state WHERE parameter_id = ?").run(parameterId);
   const insert = db.prepare(
@@ -355,6 +388,7 @@ function prepareParameterWrite(input: ParameterInput): {
   rangeMax: number | null;
   sampleIntervalSeconds: number | null;
   color: string | null;
+  aggregateMethod: AggregateMethod | null;
 } {
   const role = parseParameterRole(input.role);
   const parsed = parseStates(input.states, role);
@@ -378,6 +412,7 @@ function prepareParameterWrite(input: ParameterInput): {
       rangeMax: fromStates.rangeMax,
       sampleIntervalSeconds: range.sampleIntervalSeconds,
       color: null,
+      aggregateMethod: null,
     };
   }
   return {
@@ -387,6 +422,7 @@ function prepareParameterWrite(input: ParameterInput): {
     rangeMax: range.rangeMax,
     sampleIntervalSeconds: range.sampleIntervalSeconds,
     color: normalizeColor(input.color),
+    aggregateMethod: normalizeAggregateMethodWrite(input.aggregateMethod, role),
   };
 }
 
@@ -396,6 +432,7 @@ export function openBlondina(dbPath: string): Blondina {
   db.exec("PRAGMA foreign_keys = ON");
   ensureColorColumn(db);
   ensureRoleAndStates(db);
+  ensureAggregateMethodColumn(db);
   seed(db);
 
   const listMachines = (): MachineRow[] =>
@@ -418,7 +455,8 @@ export function openBlondina(dbPath: string): Blondina {
     const parameters = db
       .prepare(
         `SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
-                sample_interval_seconds AS sampleIntervalSeconds, color, role
+                sample_interval_seconds AS sampleIntervalSeconds, color, role,
+                aggregate_method AS aggregateMethod
          FROM cps_parameter
          ORDER BY label`,
       )
@@ -430,17 +468,24 @@ export function openBlondina(dbPath: string): Blondina {
     return parameters.map((row) => {
       const id = String(row.id);
       const label = String(row.label);
+      const unit = String(row.unit ?? "");
       const states = statesMap.get(id) ?? [];
       return {
         id,
         label,
-        unit: String(row.unit ?? ""),
+        unit,
         rangeMin: row.rangeMin == null ? null : Number(row.rangeMin),
         rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
         sampleIntervalSeconds:
           row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
         color: row.color == null ? null : String(row.color),
         role: resolveParameterRole(label, id, row.role == null ? null : String(row.role)),
+        aggregateMethod: resolveAggregateMethod(
+          label,
+          id,
+          unit,
+          row.aggregateMethod == null ? null : String(row.aggregateMethod),
+        ),
         states,
         machineIds: links
           .filter((link) => link.parameterId === id)
@@ -504,8 +549,8 @@ export function openBlondina(dbPath: string): Blondina {
       try {
         db.prepare(
           `INSERT INTO cps_parameter
-             (id, label, unit, range_min, range_max, sample_interval_seconds, color, role)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           label,
@@ -515,6 +560,7 @@ export function openBlondina(dbPath: string): Blondina {
           prepared.sampleIntervalSeconds,
           prepared.color,
           prepared.role,
+          prepared.aggregateMethod,
         );
         replaceLinks(db, id, links);
         replaceStates(db, id, prepared.states);
@@ -536,7 +582,8 @@ export function openBlondina(dbPath: string): Blondina {
       try {
         db.prepare(
           `UPDATE cps_parameter
-             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?, color = ?, role = ?
+             SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?,
+                 color = ?, role = ?, aggregate_method = ?
            WHERE id = ?`,
         ).run(
           label,
@@ -546,6 +593,7 @@ export function openBlondina(dbPath: string): Blondina {
           prepared.sampleIntervalSeconds,
           prepared.color,
           prepared.role,
+          prepared.aggregateMethod,
           id,
         );
         replaceLinks(db, id, links);
@@ -793,7 +841,9 @@ export function openBlondina(dbPath: string): Blondina {
         .prepare(
           `SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
                   p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax,
-                  p.color AS color, p.role AS role
+                  p.color AS color, p.role AS role,
+                  p.aggregate_method AS aggregateMethod,
+                  p.sample_interval_seconds AS sampleIntervalSeconds
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
            ORDER BY p.label`,
@@ -820,10 +870,11 @@ export function openBlondina(dbPath: string): Blondina {
             .map((link) => {
               const parameterId = String(link.parameterId);
               const label = String(link.label);
+              const unit = String(link.unit ?? "");
               return {
                 parameterId,
                 label,
-                unit: String(link.unit ?? ""),
+                unit,
                 rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
                 rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
                 color: link.color == null ? null : String(link.color),
@@ -832,6 +883,16 @@ export function openBlondina(dbPath: string): Blondina {
                   parameterId,
                   link.role == null ? null : String(link.role),
                 ),
+                aggregateMethod: resolveAggregateMethod(
+                  label,
+                  parameterId,
+                  unit,
+                  link.aggregateMethod == null ? null : String(link.aggregateMethod),
+                ),
+                sampleIntervalSeconds:
+                  link.sampleIntervalSeconds == null
+                    ? null
+                    : Number(link.sampleIntervalSeconds),
                 states: statesMap.get(parameterId) ?? [],
                 points: samples
                   .filter(

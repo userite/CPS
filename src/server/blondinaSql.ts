@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import sql, { type ConnectionPool, type IResult, type Transaction } from "mssql";
 import {
+  asAggregateMethod,
+  resolveAggregateMethod,
+  type AggregateMethod,
+} from "../domain/aggregateMethod";
+import {
   parseParameterRole,
   parseStates,
   pickStateValue,
@@ -86,6 +91,7 @@ type ParameterRecord = {
   sampleIntervalSeconds: number | null;
   color: string | null;
   role: string | null;
+  aggregateMethod: string | null;
 };
 
 type StateRecord = {
@@ -219,6 +225,8 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
       ALTER TABLE dbo.cps_parameter ADD color nvarchar(7) NULL;
     IF COL_LENGTH('dbo.cps_parameter', 'role') IS NULL
       ALTER TABLE dbo.cps_parameter ADD role nvarchar(16) NULL;
+    IF COL_LENGTH('dbo.cps_parameter', 'aggregate_method') IS NULL
+      ALTER TABLE dbo.cps_parameter ADD aggregate_method nvarchar(16) NULL;
     IF OBJECT_ID(N'dbo.cps_parameter_state', N'U') IS NULL
     BEGIN
       CREATE TABLE dbo.cps_parameter_state (
@@ -272,6 +280,21 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
     }
   }
 
+  function normalizeAggregateMethodWrite(
+    value: unknown,
+    role: ParameterRole,
+  ): AggregateMethod | null {
+    if (role === "status") return null;
+    if (value == null || String(value).trim() === "") return null;
+    const method = asAggregateMethod(value);
+    if (!method) {
+      throw new BlondinaInputError(
+        "Агрегирането трябва да е sum, avg, last, min, max или count.",
+      );
+    }
+    return method;
+  }
+
   function prepareParameterWrite(input: ParameterInput): {
     role: ParameterRole;
     states: ParameterStateDef[];
@@ -279,6 +302,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
     rangeMax: number | null;
     sampleIntervalSeconds: number | null;
     color: string | null;
+    aggregateMethod: AggregateMethod | null;
   } {
     const role = parseParameterRole(input.role);
     const parsed = parseStates(input.states, role);
@@ -302,6 +326,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         rangeMax: fromStates.rangeMax,
         sampleIntervalSeconds: range.sampleIntervalSeconds,
         color: null,
+        aggregateMethod: null,
       };
     }
     return {
@@ -311,6 +336,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
       rangeMax: range.rangeMax,
       sampleIntervalSeconds: range.sampleIntervalSeconds,
       color: normalizeColor(input.color),
+      aggregateMethod: normalizeAggregateMethodWrite(input.aggregateMethod, role),
     };
   }
 
@@ -332,7 +358,8 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
   const listParameters = async (): Promise<ParameterRow[]> => {
     const parameters = await pool.request().query<ParameterRecord>(`
       SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
-             sample_interval_seconds AS sampleIntervalSeconds, color, role
+             sample_interval_seconds AS sampleIntervalSeconds, color, role,
+             aggregate_method AS aggregateMethod
       FROM dbo.cps_parameter
       ORDER BY label
     `);
@@ -344,15 +371,17 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
     return parameters.recordset.map((row) => {
       const id = String(row.id);
       const label = String(row.label);
+      const unit = String(row.unit ?? "");
       return {
         id,
         label,
-        unit: String(row.unit ?? ""),
+        unit,
         rangeMin: row.rangeMin == null ? null : Number(row.rangeMin),
         rangeMax: row.rangeMax == null ? null : Number(row.rangeMax),
         sampleIntervalSeconds: row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds),
         color: row.color == null ? null : String(row.color),
         role: resolveParameterRole(label, id, row.role),
+        aggregateMethod: resolveAggregateMethod(label, id, unit, row.aggregateMethod),
         states: statesMap.get(id) ?? [],
         machineIds: links.recordset
           .filter((link) => link.parameterId === id)
@@ -472,10 +501,11 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
             .input("sampleIntervalSeconds", sql.Int, prepared.sampleIntervalSeconds)
             .input("color", sql.NVarChar(7), prepared.color)
             .input("role", sql.NVarChar(16), prepared.role)
+            .input("aggregateMethod", sql.NVarChar(16), prepared.aggregateMethod)
             .query(`
               INSERT INTO dbo.cps_parameter
-                (id, label, unit, range_min, range_max, sample_interval_seconds, color, role)
-              VALUES (@id, @label, @unit, @rangeMin, @rangeMax, @sampleIntervalSeconds, @color, @role)
+                (id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method)
+              VALUES (@id, @label, @unit, @rangeMin, @rangeMax, @sampleIntervalSeconds, @color, @role, @aggregateMethod)
             `);
           await replaceLinks(tx, id, links);
           await replaceStates(tx, id, prepared.states);
@@ -507,11 +537,13 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
           .input("sampleIntervalSeconds", sql.Int, prepared.sampleIntervalSeconds)
           .input("color", sql.NVarChar(7), prepared.color)
           .input("role", sql.NVarChar(16), prepared.role)
+          .input("aggregateMethod", sql.NVarChar(16), prepared.aggregateMethod)
           .input("id", sql.NVarChar(64), id)
           .query(`
             UPDATE dbo.cps_parameter
               SET label = @label, unit = @unit, range_min = @rangeMin, range_max = @rangeMax,
-                  sample_interval_seconds = @sampleIntervalSeconds, color = @color, role = @role
+                  sample_interval_seconds = @sampleIntervalSeconds, color = @color, role = @role,
+                  aggregate_method = @aggregateMethod
             WHERE id = @id
           `);
         await replaceLinks(tx, id, links);
@@ -764,10 +796,14 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
         rangeMax: number | null;
         color: string | null;
         role: string | null;
+        aggregateMethod: string | null;
+        sampleIntervalSeconds: number | null;
       }>(`
         SELECT mp.machine_id AS machineId, p.id AS parameterId, p.label AS label,
                p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax,
-               p.color AS color, p.role AS role
+               p.color AS color, p.role AS role,
+               p.aggregate_method AS aggregateMethod,
+               p.sample_interval_seconds AS sampleIntervalSeconds
         FROM dbo.cps_machine_parameter mp
         JOIN dbo.cps_parameter p ON p.id = mp.parameter_id
         ORDER BY p.label
@@ -798,14 +834,25 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
             .map((link) => {
               const parameterId = String(link.parameterId);
               const label = String(link.label);
+              const unit = String(link.unit ?? "");
               return {
                 parameterId,
                 label,
-                unit: String(link.unit ?? ""),
+                unit,
                 rangeMin: link.rangeMin == null ? null : Number(link.rangeMin),
                 rangeMax: link.rangeMax == null ? null : Number(link.rangeMax),
                 color: link.color == null ? null : String(link.color),
                 role: resolveParameterRole(label, parameterId, link.role),
+                aggregateMethod: resolveAggregateMethod(
+                  label,
+                  parameterId,
+                  unit,
+                  link.aggregateMethod,
+                ),
+                sampleIntervalSeconds:
+                  link.sampleIntervalSeconds == null
+                    ? null
+                    : Number(link.sampleIntervalSeconds),
                 states: statesMap.get(parameterId) ?? [],
                 points: samples.recordset
                   .filter(
