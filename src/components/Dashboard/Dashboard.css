@@ -159,6 +159,8 @@
 }
 
 .app-shell-fit .dash {
+  display: flex;
+  flex-direction: column;
   max-width: none;
   width: 100%;
   min-width: 0;
@@ -168,6 +170,7 @@
 }
 
 .app-shell-fit .dash-header {
+  flex: none;
   padding-bottom: 0.45rem;
 }
 
@@ -176,6 +179,7 @@
 }
 
 .app-shell-fit .demo-note {
+  flex: none;
   margin: 0.35rem 0 0;
   font-size: 0.82rem;
 }
@@ -190,13 +194,18 @@
   margin-top: 0.6rem;
 }
 
+.app-shell-fit .trend-list {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
 .trend-card {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   align-self: stretch;
   min-width: 0;
-  max-width: 20rem;
+  max-width: none;
   min-height: 100%;
   background: var(--card);
   border: 1px solid var(--card-border);
@@ -435,12 +444,28 @@
 }
 
 .agg-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   margin-top: 1rem;
+  margin-left: 0;
+  margin-right: 0;
   padding: 0.7rem 0.8rem 0.75rem;
   background: var(--card);
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
   min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.app-shell-fit .agg-panel {
+  flex: 1 1 auto;
+  min-height: 14rem;
+}
+
+.agg-head {
+  flex: none;
 }
 
 .agg-head h2 {
@@ -461,12 +486,18 @@
   gap: 0.85rem;
   margin-top: 0.55rem;
   align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 .agg-params {
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--card-border);
   padding-right: 0.7rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .agg-params-label {
@@ -475,6 +506,7 @@
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  flex: none;
 }
 
 .agg-param-list {
@@ -484,7 +516,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
-  max-height: 16rem;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -521,20 +554,34 @@
 
 .agg-chart {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .agg-plot {
   display: grid;
   grid-template-columns: 2.3rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   column-gap: 0.25rem;
+  flex: 1 1 auto;
+  min-height: 10rem;
+  width: 100%;
+  height: 100%;
+}
+
+.agg-plot.agg-plot-values {
+  grid-template-columns: 3.4rem minmax(0, 1fr);
 }
 
 .agg-yaxis {
   position: relative;
   grid-column: 1;
   grid-row: 1;
+  height: 100%;
+  min-height: 0;
 }
 
 .agg-yaxis span {
@@ -544,6 +591,12 @@
   font-size: 0.62rem;
   line-height: 1;
   transform: translateY(-50%);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .agg-svg {
@@ -551,13 +604,17 @@
   grid-column: 2;
   grid-row: 1;
   width: 100%;
-  height: auto;
-  max-height: 12rem;
-  aspect-ratio: 100 / 48;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  justify-self: stretch;
+  align-self: stretch;
 }
 
 .agg-time {
   grid-column: 2;
+  flex: none;
 }
 
 .agg-readout {
@@ -565,6 +622,7 @@
   min-height: 1em;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
 .agg-legend {
@@ -574,6 +632,7 @@
   margin: 0.35rem 0 0;
   padding: 0;
   list-style: none;
+  flex: none;
 }
 
 .agg-legend li {
@@ -609,16 +668,22 @@
     border-bottom: 1px solid var(--card-border);
     padding-right: 0;
     padding-bottom: 0.55rem;
+    max-height: 9rem;
   }
 
   .agg-param-list {
-    max-height: 8rem;
+    max-height: none;
+  }
+
+  .app-shell-fit .agg-panel {
+    min-height: 18rem;
   }
 }
 
 @media (max-width: 720px) {
   .app-shell-fit .dash {
-    display: block;
+    display: flex;
+    flex-direction: column;
     height: auto;
     overflow: visible;
   }
@@ -633,5 +698,10 @@
     width: 100%;
     max-width: none;
     min-height: 0;
+  }
+
+  .app-shell-fit .agg-panel {
+    flex: none;
+    min-height: 16rem;
   }
 }

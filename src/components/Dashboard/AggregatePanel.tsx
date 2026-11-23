@@ -142,6 +142,16 @@ export function AggregatePanel({
   const timeStart = new Date(timeDomain.tMin).toISOString();
   const timeEnd = new Date(timeDomain.tMax).toISOString();
   const scaleY = AGGREGATE_VIEW.h / TREND_VIEW.h;
+  /** One selected param → Y shows real range values, not %. */
+  const valueAxis = aggregateSeries.length === 1 ? aggregateSeries[0] : null;
+  const yTopLabel =
+    valueAxis && valueAxis.rangeMax != null
+      ? `${formatNumber(valueAxis.rangeMax)}${valueAxis.unit ? ` ${valueAxis.unit}` : ""}`
+      : "100%";
+  const yBottomLabel =
+    valueAxis && valueAxis.rangeMin != null
+      ? `${formatNumber(valueAxis.rangeMin)}${valueAxis.unit ? ` ${valueAxis.unit}` : ""}`
+      : "0%";
 
   function toggle(parameterId: string): void {
     setSelectedIds((prev) =>
@@ -193,17 +203,17 @@ export function AggregatePanel({
             <p className="agg-empty">Няма данни за избраните параметри в прозореца.</p>
           ) : (
             <>
-              <div className="agg-plot">
+              <div className={`agg-plot${valueAxis ? " agg-plot-values" : ""}`}>
                 <div className="agg-yaxis" aria-hidden="true">
-                  <span style={{ top: `${(y100 / TREND_VIEW.h) * 100}%` }}>100%</span>
-                  <span style={{ top: `${(y0 / TREND_VIEW.h) * 100}%` }}>0%</span>
+                  <span style={{ top: `${(y100 / TREND_VIEW.h) * 100}%` }}>{yTopLabel}</span>
+                  <span style={{ top: `${(y0 / TREND_VIEW.h) * 100}%` }}>{yBottomLabel}</span>
                 </div>
                 <svg
                   className="agg-svg"
                   viewBox={`0 0 ${AGGREGATE_VIEW.w} ${AGGREGATE_VIEW.h}`}
                   role="img"
                   aria-label="Обща линейна графика"
-                  preserveAspectRatio="xMidYMid meet"
+                  preserveAspectRatio="none"
                   onMouseLeave={() => setHover(null)}
                 >
                   <g transform={`scale(1 ${scaleY})`}>
@@ -252,7 +262,9 @@ export function AggregatePanel({
                           }
                         >
                           <title>
-                            {`${line.label}: ${formatNumber(point.value)} ${line.unit} · ${formatNumber(point.percent)}% · ${formatTime(point.timestamp)}`}
+                            {valueAxis
+                              ? `${line.label}: ${formatNumber(point.value)} ${line.unit} · ${formatTime(point.timestamp)}`
+                              : `${line.label}: ${formatNumber(point.value)} ${line.unit} · ${formatNumber(point.percent)}% · ${formatTime(point.timestamp)}`}
                           </title>
                         </circle>
                       )),
@@ -268,7 +280,9 @@ export function AggregatePanel({
                 {hover
                   ? hover.point.outside
                     ? `${hover.label}: извън границите`
-                    : `${hover.label}: ${formatNumber(hover.point.value)} ${hover.unit} · ${formatNumber(hover.point.percent)}%`
+                    : valueAxis
+                      ? `${hover.label}: ${formatNumber(hover.point.value)} ${hover.unit}`
+                      : `${hover.label}: ${formatNumber(hover.point.value)} ${hover.unit} · ${formatNumber(hover.point.percent)}%`
                   : "\u00a0"}
               </p>
               <ul className="agg-legend">
@@ -276,6 +290,15 @@ export function AggregatePanel({
                   const method =
                     aggregateInputs.find((item) => item.parameterId === line.parameterId)
                       ?.aggregateMethod ?? "avg";
+                  const valueText = !line.hasRange
+                    ? "без граници"
+                    : valueAxis
+                      ? line.lastValue == null
+                        ? "няма данни"
+                        : `${formatNumber(line.lastValue)}${line.unit ? ` ${line.unit}` : ""}`
+                      : line.lastPercent == null
+                        ? "няма данни"
+                        : `${formatNumber(line.lastPercent)}%`;
                   return (
                     <li key={line.parameterId}>
                       <i style={{ background: line.color }} aria-hidden="true" />
@@ -283,11 +306,7 @@ export function AggregatePanel({
                       <span className="trend-legend-value">
                         {AGGREGATE_METHOD_LABELS[method]}
                         {" · "}
-                        {!line.hasRange
-                          ? "без граници"
-                          : line.lastPercent == null
-                            ? "няма данни"
-                            : `${formatNumber(line.lastPercent)}%`}
+                        {valueText}
                         {line.outside ? " · извън" : ""}
                       </span>
                     </li>
