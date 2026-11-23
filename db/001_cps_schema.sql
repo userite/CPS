@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS cps_parameter (
   color                    TEXT,
   role                     TEXT NOT NULL DEFAULT 'metric'
     CHECK (role IN ('metric', 'plan', 'report', 'status')),
+  aggregate_method         TEXT
+    CHECK (
+      aggregate_method IS NULL OR
+      aggregate_method IN ('sum', 'avg', 'last', 'min', 'max', 'count')
+    ),
   CHECK (
     sample_interval_seconds IS NULL OR sample_interval_seconds > 0
   ),

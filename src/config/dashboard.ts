@@ -26,6 +26,9 @@ export const chartWindowHourChoices = [1, 2, 4, 8, 12, 24] as const;
 
 export const chartWindowHoursStorageKey = "cps.chartWindowHours";
 
+/** Selected parameter ids for the bottom aggregate chart on the табло. */
+export const aggregateChartParamsStorageKey = "cps.aggregateChartParams";
+
 export function normalizeChartWindowHours(value: unknown): number {
   const hours = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(hours) || hours <= 0) return chartWindowHoursDefault;
