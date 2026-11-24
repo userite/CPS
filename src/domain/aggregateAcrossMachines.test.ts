@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aggregateParameterSeries, bucketMsFor } from "./aggregateAcrossMachines";
+import {
+  aggregateDisplayRange,
+  aggregateParameterSeries,
+  bucketMsFor,
+} from "./aggregateAcrossMachines";
 
 const domain = {
   tMin: Date.parse("2026-11-23T10:00:00.000Z"),
@@ -47,6 +51,88 @@ describe("aggregateAcrossMachines", () => {
 
     const count = aggregateParameterSeries({ ...base, aggregateMethod: "count" }, domain);
     expect(count.points[0].value).toBe(2);
+  });
+
+  it("scales sum/count display range by machine count", () => {
+    expect(aggregateDisplayRange("sum", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 400 });
+    expect(aggregateDisplayRange("avg", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 100 });
+    expect(aggregateDisplayRange("count", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 4 });
+
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "parts",
+        label: "Детайли",
+        unit: "бр",
+        rangeMin: 0,
+        rangeMax: 100,
+        aggregateMethod: "sum",
+        sampleIntervalSeconds: 60,
+        machines: [
+          { machineId: "A", points: [{ timestamp: "2026-11-23T10:00:10.000Z", value: 10 }] },
+          { machineId: "B", points: [{ timestamp: "2026-11-23T10:00:20.000Z", value: 30 }] },
+        ],
+      },
+      domain,
+    );
+    expect(series.points[0].value).toBe(40);
+    expect(series.rangeMin).toBe(0);
+    expect(series.rangeMax).toBe(200);
+  });
+
+  it("accumulates report increments only after each machine's latest plan", () => {
+    expect(aggregateDisplayRange("sum", 1, 25, 2, { reportPlanTotal: 150 })).toEqual({
+      rangeMin: 0,
+      rangeMax: 150,
+    });
+
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "report",
+        label: "Отчет",
+        unit: "бр",
+        rangeMin: 1,
+        rangeMax: 25,
+        role: "report",
+        aggregateMethod: "avg",
+        sampleIntervalSeconds: 60,
+        machines: [
+          {
+            machineId: "A",
+            points: [
+              { timestamp: "2026-11-23T10:00:10.000Z", value: 5 },
+              { timestamp: "2026-11-23T10:05:10.000Z", value: 3 },
+              { timestamp: "2026-11-23T10:06:10.000Z", value: 4 },
+            ],
+          },
+          {
+            machineId: "B",
+            points: [
+              { timestamp: "2026-11-23T10:00:10.000Z", value: 9 },
+              { timestamp: "2026-11-23T10:05:40.000Z", value: 2 },
+            ],
+          },
+        ],
+        planByMachine: [
+          {
+            machineId: "A",
+            points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 100 }],
+          },
+          {
+            machineId: "B",
+            points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 50 }],
+          },
+        ],
+      },
+      domain,
+    );
+
+    // Pre-plan samples (5 and 9) ignored; post-plan 3+4+2 = 9 cumulative.
+    expect(series.rangeMin).toBe(0);
+    expect(series.rangeMax).toBe(150);
+    expect(series.points.length).toBeGreaterThan(0);
+    expect(series.points.at(-1)?.value).toBe(9);
+    // First minute after plan: 3 (A) + 2 (B) in the same 60s bucket.
+    expect(series.points[0]?.value).toBe(5);
   });
 
   it("picks the latest sample across machines for last", () => {

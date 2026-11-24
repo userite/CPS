@@ -15,6 +15,14 @@ import {
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
+import { resolveParameterRole } from "../../domain/parameterRole";
+import {
+  buildRangeEvents,
+  rangeEventDetail,
+  rangeEventSeriesFromMachines,
+  rangeEventTitle,
+  type RangeEvent,
+} from "../../domain/rangeEvents";
 import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
 
 const AGGREGATE_VIEW = { w: TREND_VIEW.w, h: 48 };
@@ -30,8 +38,10 @@ function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
-function isNumericMetric(series: DashboardSeries): boolean {
-  if (series.role === "status") return false;
+/** Metric / plan / report with numeric bounds (status stays on the strip only). */
+function isAggregateCatalogSeries(series: DashboardSeries): boolean {
+  const role = resolveParameterRole(series.label, series.parameterId, series.role);
+  if (role === "status") return false;
   return (
     typeof series.rangeMin === "number" &&
     Number.isFinite(series.rangeMin) &&
@@ -56,7 +66,7 @@ function catalogFromMachines(machines: DashboardMachine[]): DashboardSeries[] {
   const byId = new Map<string, DashboardSeries>();
   for (const machine of machines) {
     for (const series of machine.series) {
-      if (!isNumericMetric(series)) continue;
+      if (!isAggregateCatalogSeries(series)) continue;
       if (!byId.has(series.parameterId)) byId.set(series.parameterId, series);
     }
   }
@@ -114,24 +124,37 @@ export function AggregatePanel({
     const selected = new Set(selectedIds);
     return catalog
       .filter((item) => selected.has(item.parameterId))
-      .map((item) => ({
-        parameterId: item.parameterId,
-        label: item.label,
-        unit: item.unit,
-        rangeMin: item.rangeMin,
-        rangeMax: item.rangeMax,
-        color: item.color,
-        role: item.role,
-        aggregateMethod: item.aggregateMethod,
-        sampleIntervalSeconds: item.sampleIntervalSeconds,
-        machines: machines.map((machine) => {
+      .map((item) => {
+        const role = resolveParameterRole(item.label, item.parameterId, item.role);
+        const machineSlices = machines.flatMap((machine) => {
           const series = machine.series.find((row) => row.parameterId === item.parameterId);
-          return {
-            machineId: machine.id,
-            points: series?.points ?? [],
-          };
-        }),
-      }));
+          if (!series) return [];
+          return [{ machineId: machine.id, points: series.points }];
+        });
+        const planByMachine =
+          role === "report"
+            ? machines.flatMap((machine) => {
+                const plan = machine.series.find(
+                  (row) => resolveParameterRole(row.label, row.parameterId, row.role) === "plan",
+                );
+                if (!plan) return [];
+                return [{ machineId: machine.id, points: plan.points }];
+              })
+            : undefined;
+        return {
+          parameterId: item.parameterId,
+          label: item.label,
+          unit: item.unit,
+          rangeMin: item.rangeMin,
+          rangeMax: item.rangeMax,
+          color: item.color,
+          role: item.role,
+          aggregateMethod: role === "report" ? "sum" : item.aggregateMethod,
+          sampleIntervalSeconds: item.sampleIntervalSeconds,
+          machines: machineSlices,
+          planByMachine,
+        };
+      });
   }, [catalog, machines, selectedIds]);
 
   const aggregateSeries = useMemo(
@@ -142,6 +165,11 @@ export function AggregatePanel({
   const { lines, frameMin, frameMax } = useMemo(
     () => buildMachineTrend(aggregateSeries, orderedIds, timeDomain),
     [aggregateSeries, orderedIds, timeDomain],
+  );
+
+  const rangeEvents = useMemo(
+    () => buildRangeEvents(rangeEventSeriesFromMachines(machines), orderedIds),
+    [machines, orderedIds],
   );
 
   const plotted = lines.some((line) => line.plotted);
@@ -178,37 +206,40 @@ export function AggregatePanel({
         <p>Избраните параметри се комбинират по метода от администрацията (aggregate_method).</p>
       </header>
       <div className="agg-body">
-        <aside className="agg-params">
-          <p className="agg-params-label">Параметри</p>
-          {catalog.length === 0 ? (
-            <p className="agg-empty">Няма числови параметри с граници.</p>
+        <aside className="agg-events" aria-label="Последни събития">
+          <header className="agg-events-head">
+            <h3 className="agg-events-title">
+              <svg className="agg-events-bell" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0a3 3 0 1 1-6 0"
+                />
+              </svg>
+              Последни събития
+            </h3>
+            {rangeEvents.length > 0 && (
+              <span className="agg-events-all" title="Всички събития в прозореца">
+                Всички →
+              </span>
+            )}
+          </header>
+          {rangeEvents.length === 0 ? (
+            <p className="agg-empty">Няма пресичания на границите в прозореца.</p>
           ) : (
-            <ul className="agg-param-list">
-              {catalog.map((item) => (
-                <li key={item.parameterId}>
-                  <label className="agg-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(item.parameterId)}
-                      onChange={() => toggle(item.parameterId)}
-                    />
-                    <span className="agg-check-text">
-                      <span className="agg-check-name">{item.label}</span>
-                      <span className="agg-check-meta">
-                        {item.parameterId}
-                        {" · "}
-                        {AGGREGATE_METHOD_LABELS[item.aggregateMethod]}
-                      </span>
-                    </span>
-                  </label>
-                </li>
+            <ul className="agg-event-list">
+              {rangeEvents.map((event) => (
+                <RangeEventRow key={eventKey(event)} event={event} />
               ))}
             </ul>
           )}
         </aside>
         <div className="agg-chart">
           {selectedIds.length === 0 ? (
-            <p className="agg-empty">Маркирайте параметър отляво.</p>
+            <p className="agg-empty">Маркирайте параметър отдясно.</p>
           ) : !plotted ? (
             <p className="agg-empty">Няма данни за избраните параметри в прозореца.</p>
           ) : (
@@ -376,7 +407,65 @@ export function AggregatePanel({
             </>
           )}
         </div>
+        <aside className="agg-params">
+          <p className="agg-params-label">Параметри</p>
+          {catalog.length === 0 ? (
+            <p className="agg-empty">Няма числови параметри с граници.</p>
+          ) : (
+            <ul className="agg-param-list">
+              {catalog.map((item) => {
+                const role = resolveParameterRole(item.label, item.parameterId, item.role);
+                const method = role === "report" ? "sum" : item.aggregateMethod;
+                return (
+                  <li key={item.parameterId}>
+                    <label className="agg-check">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(item.parameterId)}
+                        onChange={() => toggle(item.parameterId)}
+                      />
+                      <span className="agg-check-text">
+                        <span className="agg-check-name">{item.label}</span>
+                        <span className="agg-check-meta">
+                          {item.parameterId}
+                          {" · "}
+                          {AGGREGATE_METHOD_LABELS[method]}
+                          {role === "report" ? " · след план" : ""}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </aside>
       </div>
     </section>
+  );
+}
+
+function eventKey(event: RangeEvent): string {
+  return `${event.machineId}-${event.parameterId}-${event.timestamp}-${event.kind}`;
+}
+
+function RangeEventRow({ event }: { event: RangeEvent }) {
+  const title = rangeEventTitle(event);
+  const detail = rangeEventDetail(event, formatNumber);
+  return (
+    <li className={`agg-event agg-event-${event.kind}`}>
+      <span className="agg-event-rail" aria-hidden="true">
+        <i style={{ background: event.color }} />
+      </span>
+      <div className="agg-event-body">
+        <span className="agg-event-time">{formatTime(event.timestamp)}</span>
+        <p className="agg-event-title">
+          <strong>{event.machineName}</strong>
+          {" – "}
+          <span>{title}</span>
+        </p>
+        <p className="agg-event-detail">{detail}</p>
+      </div>
+    </li>
   );
 }
