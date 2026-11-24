@@ -1,5 +1,6 @@
 import type { AggregateMethod } from "./aggregateMethod";
 import type { TrendSample, TrendSeriesInput } from "./machineTrend";
+import { resolveParameterRole } from "./parameterRole";
 
 export type MachineSeriesSlice = {
   machineId: string;
@@ -18,6 +19,11 @@ export type AggregateParamInput = {
   /** Seconds; used as time-bucket width. Falls back to 60. */
   sampleIntervalSeconds?: number | null;
   machines: MachineSeriesSlice[];
+  /**
+   * For report role: per-machine plan samples. Report increments count only
+   * after each machine's latest plan (same cut as the progress ring).
+   */
+  planByMachine?: MachineSeriesSlice[];
 };
 
 const DEFAULT_BUCKET_SECONDS = 60;
@@ -36,20 +42,51 @@ function bucketStart(t: number, bucketMs: number, tMin: number): number {
   return tMin + Math.floor((t - tMin) / bucketMs) * bucketMs;
 }
 
+type FiniteSample = { t: number; value: number };
+
+function finiteSamples(points: TrendSample[]): FiniteSample[] {
+  return [...points]
+    .filter((point) => point && typeof point.timestamp === "string")
+    .map((point) => {
+      const t = Date.parse(point.timestamp);
+      const value =
+        typeof point.value === "number" && Number.isFinite(point.value) ? point.value : null;
+      return { t: Number.isFinite(t) ? t : NaN, value };
+    })
+    .filter(
+      (point): point is { t: number; value: number } =>
+        Number.isFinite(point.t) && point.value != null,
+    )
+    .sort((a, b) => a.t - b.t);
+}
+
+function lastPlanOf(points: TrendSample[] | undefined): FiniteSample | null {
+  const samples = finiteSamples(points ?? []);
+  return samples.at(-1) ?? null;
+}
+
 type MachineBucketValue = { t: number; value: number };
 
 /**
  * Display range for the aggregate series.
- * Sum combines one value per machine, so 0%/100% must be n× the per-machine
- * bounds — otherwise in-range machine values plot as huge false spikes.
- * Count is 0…n machines.
+ * - report (post-plan cumulative sum): 0 … sum of latest plan targets
+ * - sum of ordinary metrics: n × per-machine bounds
+ * - count: 0 … n
  */
 export function aggregateDisplayRange(
   method: AggregateMethod,
   rangeMin: number | null,
   rangeMax: number | null,
   machineCount: number,
+  options?: { reportPlanTotal?: number | null },
 ): { rangeMin: number | null; rangeMax: number | null } {
+  if (
+    options?.reportPlanTotal != null &&
+    Number.isFinite(options.reportPlanTotal) &&
+    options.reportPlanTotal > 0
+  ) {
+    return { rangeMin: 0, rangeMax: options.reportPlanTotal };
+  }
   const n = Math.max(1, machineCount);
   if (method === "count") return { rangeMin: 0, rangeMax: n };
   if (
@@ -65,20 +102,87 @@ export function aggregateDisplayRange(
 }
 
 /**
+ * Report aggregate: sum increments after each machine's latest plan, then
+ * accumulate over time (same post-last-plan cut as the progress ring).
+ * Y 100% = sum of those latest plan targets.
+ */
+function aggregateReportSeries(
+  input: AggregateParamInput,
+  timeDomain: { tMin: number; tMax: number },
+): TrendSeriesInput {
+  const bucketMs = bucketMsFor(input.sampleIntervalSeconds);
+  const { tMin, tMax } = timeDomain;
+  const planById = new Map(
+    (input.planByMachine ?? []).map((row) => [row.machineId, row.points] as const),
+  );
+
+  /** bucketStart → summed increments in that bucket (all machines) */
+  const bucketIncrements = new Map<number, number>();
+  let planTotal = 0;
+  let machinesWithPlan = 0;
+
+  for (const machine of input.machines) {
+    const lastPlan = lastPlanOf(planById.get(machine.machineId));
+    if (!lastPlan || lastPlan.value <= 0) continue;
+    machinesWithPlan += 1;
+    planTotal += lastPlan.value;
+
+    for (const sample of finiteSamples(machine.points)) {
+      if (sample.t <= lastPlan.t) continue;
+      if (sample.t < tMin || sample.t > tMax) continue;
+      const start = bucketStart(sample.t, bucketMs, tMin);
+      bucketIncrements.set(start, (bucketIncrements.get(start) ?? 0) + sample.value);
+    }
+  }
+
+  const starts = [...bucketIncrements.keys()].sort((a, b) => a - b);
+  let running = 0;
+  const points: TrendSample[] = starts.map((start) => {
+    running += bucketIncrements.get(start) ?? 0;
+    return {
+      timestamp: new Date(start + bucketMs / 2).toISOString(),
+      value: running,
+    };
+  });
+
+  const displayRange = aggregateDisplayRange("sum", input.rangeMin, input.rangeMax, machinesWithPlan, {
+    reportPlanTotal: planTotal > 0 ? planTotal : null,
+  });
+
+  return {
+    parameterId: input.parameterId,
+    label: input.label,
+    unit: input.unit,
+    rangeMin: displayRange.rangeMin,
+    rangeMax: displayRange.rangeMax,
+    color: input.color,
+    role: input.role,
+    points,
+  };
+}
+
+/**
  * Per machine: one value per bucket = last finite sample in that bucket.
  * Then combine across machines with the parameter's aggregate method.
+ *
+ * Report role is special — see {@link aggregateReportSeries}.
  *
  * - sum / avg / min / max: over machine bucket values
  * - last: the finite sample with the latest timestamp among all machines in the bucket
  * - count: number of machines that contributed a finite sample in the bucket
- *
- * Y scale uses the parameter range (percent), same as machine cards, except
- * sum/count which use {@link aggregateDisplayRange}.
  */
 export function aggregateParameterSeries(
   input: AggregateParamInput,
   timeDomain: { tMin: number; tMax: number },
 ): TrendSeriesInput {
+  const role = resolveParameterRole(input.label, input.parameterId, input.role);
+  if (role === "report") {
+    return aggregateReportSeries(
+      { ...input, aggregateMethod: "sum" },
+      timeDomain,
+    );
+  }
+
   const bucketMs = bucketMsFor(input.sampleIntervalSeconds);
   const { tMin, tMax } = timeDomain;
   const machineCount = input.machines.length;

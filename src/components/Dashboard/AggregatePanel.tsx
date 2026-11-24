@@ -15,7 +15,7 @@ import {
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
-import { chartsOnLinear } from "../../domain/parameterRole";
+import { resolveParameterRole } from "../../domain/parameterRole";
 import {
   buildRangeEvents,
   rangeEventDetail,
@@ -38,9 +38,10 @@ function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
-/** Same series as machine linear charts: metric role with numeric bounds. */
+/** Metric / plan / report with numeric bounds (status stays on the strip only). */
 function isAggregateCatalogSeries(series: DashboardSeries): boolean {
-  if (!chartsOnLinear(series.role)) return false;
+  const role = resolveParameterRole(series.label, series.parameterId, series.role);
+  if (role === "status") return false;
   return (
     typeof series.rangeMin === "number" &&
     Number.isFinite(series.rangeMin) &&
@@ -123,27 +124,37 @@ export function AggregatePanel({
     const selected = new Set(selectedIds);
     return catalog
       .filter((item) => selected.has(item.parameterId))
-      .map((item) => ({
-        parameterId: item.parameterId,
-        label: item.label,
-        unit: item.unit,
-        rangeMin: item.rangeMin,
-        rangeMax: item.rangeMax,
-        color: item.color,
-        role: item.role,
-        aggregateMethod: item.aggregateMethod,
-        sampleIntervalSeconds: item.sampleIntervalSeconds,
-        machines: machines.flatMap((machine) => {
+      .map((item) => {
+        const role = resolveParameterRole(item.label, item.parameterId, item.role);
+        const machineSlices = machines.flatMap((machine) => {
           const series = machine.series.find((row) => row.parameterId === item.parameterId);
           if (!series) return [];
-          return [
-            {
-              machineId: machine.id,
-              points: series.points,
-            },
-          ];
-        }),
-      }));
+          return [{ machineId: machine.id, points: series.points }];
+        });
+        const planByMachine =
+          role === "report"
+            ? machines.flatMap((machine) => {
+                const plan = machine.series.find(
+                  (row) => resolveParameterRole(row.label, row.parameterId, row.role) === "plan",
+                );
+                if (!plan) return [];
+                return [{ machineId: machine.id, points: plan.points }];
+              })
+            : undefined;
+        return {
+          parameterId: item.parameterId,
+          label: item.label,
+          unit: item.unit,
+          rangeMin: item.rangeMin,
+          rangeMax: item.rangeMax,
+          color: item.color,
+          role: item.role,
+          aggregateMethod: role === "report" ? "sum" : item.aggregateMethod,
+          sampleIntervalSeconds: item.sampleIntervalSeconds,
+          machines: machineSlices,
+          planByMachine,
+        };
+      });
   }, [catalog, machines, selectedIds]);
 
   const aggregateSeries = useMemo(
@@ -402,25 +413,30 @@ export function AggregatePanel({
             <p className="agg-empty">Няма числови параметри с граници.</p>
           ) : (
             <ul className="agg-param-list">
-              {catalog.map((item) => (
-                <li key={item.parameterId}>
-                  <label className="agg-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(item.parameterId)}
-                      onChange={() => toggle(item.parameterId)}
-                    />
-                    <span className="agg-check-text">
-                      <span className="agg-check-name">{item.label}</span>
-                      <span className="agg-check-meta">
-                        {item.parameterId}
-                        {" · "}
-                        {AGGREGATE_METHOD_LABELS[item.aggregateMethod]}
+              {catalog.map((item) => {
+                const role = resolveParameterRole(item.label, item.parameterId, item.role);
+                const method = role === "report" ? "sum" : item.aggregateMethod;
+                return (
+                  <li key={item.parameterId}>
+                    <label className="agg-check">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(item.parameterId)}
+                        onChange={() => toggle(item.parameterId)}
+                      />
+                      <span className="agg-check-text">
+                        <span className="agg-check-name">{item.label}</span>
+                        <span className="agg-check-meta">
+                          {item.parameterId}
+                          {" · "}
+                          {AGGREGATE_METHOD_LABELS[method]}
+                          {role === "report" ? " · след план" : ""}
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                </li>
-              ))}
+                    </label>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </aside>
