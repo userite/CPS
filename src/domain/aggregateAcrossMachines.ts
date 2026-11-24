@@ -39,6 +39,32 @@ function bucketStart(t: number, bucketMs: number, tMin: number): number {
 type MachineBucketValue = { t: number; value: number };
 
 /**
+ * Display range for the aggregate series.
+ * Sum combines one value per machine, so 0%/100% must be n× the per-machine
+ * bounds — otherwise in-range machine values plot as huge false spikes.
+ * Count is 0…n machines.
+ */
+export function aggregateDisplayRange(
+  method: AggregateMethod,
+  rangeMin: number | null,
+  rangeMax: number | null,
+  machineCount: number,
+): { rangeMin: number | null; rangeMax: number | null } {
+  const n = Math.max(1, machineCount);
+  if (method === "count") return { rangeMin: 0, rangeMax: n };
+  if (
+    method === "sum" &&
+    typeof rangeMin === "number" &&
+    Number.isFinite(rangeMin) &&
+    typeof rangeMax === "number" &&
+    Number.isFinite(rangeMax)
+  ) {
+    return { rangeMin: rangeMin * n, rangeMax: rangeMax * n };
+  }
+  return { rangeMin, rangeMax };
+}
+
+/**
  * Per machine: one value per bucket = last finite sample in that bucket.
  * Then combine across machines with the parameter's aggregate method.
  *
@@ -46,8 +72,8 @@ type MachineBucketValue = { t: number; value: number };
  * - last: the finite sample with the latest timestamp among all machines in the bucket
  * - count: number of machines that contributed a finite sample in the bucket
  *
- * Y scale still uses the parameter range (percent), same as machine cards.
- * Sum can exceed 100%; the chart already auto-rescales.
+ * Y scale uses the parameter range (percent), same as machine cards, except
+ * sum/count which use {@link aggregateDisplayRange}.
  */
 export function aggregateParameterSeries(
   input: AggregateParamInput,
@@ -55,6 +81,7 @@ export function aggregateParameterSeries(
 ): TrendSeriesInput {
   const bucketMs = bucketMsFor(input.sampleIntervalSeconds);
   const { tMin, tMax } = timeDomain;
+  const machineCount = input.machines.length;
 
   /** bucketStart → list of per-machine contributions (with their sample times) */
   const buckets = new Map<number, MachineBucketValue[]>();
@@ -124,12 +151,19 @@ export function aggregateParameterSeries(
     };
   });
 
+  const displayRange = aggregateDisplayRange(
+    input.aggregateMethod,
+    input.rangeMin,
+    input.rangeMax,
+    machineCount,
+  );
+
   return {
     parameterId: input.parameterId,
     label: input.label,
     unit: input.unit,
-    rangeMin: input.rangeMin,
-    rangeMax: input.rangeMax,
+    rangeMin: displayRange.rangeMin,
+    rangeMax: displayRange.rangeMax,
     color: input.color,
     role: input.role,
     points,

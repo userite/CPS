@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aggregateParameterSeries, bucketMsFor } from "./aggregateAcrossMachines";
+import {
+  aggregateDisplayRange,
+  aggregateParameterSeries,
+  bucketMsFor,
+} from "./aggregateAcrossMachines";
 
 const domain = {
   tMin: Date.parse("2026-11-23T10:00:00.000Z"),
@@ -47,6 +51,32 @@ describe("aggregateAcrossMachines", () => {
 
     const count = aggregateParameterSeries({ ...base, aggregateMethod: "count" }, domain);
     expect(count.points[0].value).toBe(2);
+  });
+
+  it("scales sum/count display range by machine count", () => {
+    expect(aggregateDisplayRange("sum", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 400 });
+    expect(aggregateDisplayRange("avg", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 100 });
+    expect(aggregateDisplayRange("count", 0, 100, 4)).toEqual({ rangeMin: 0, rangeMax: 4 });
+
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "parts",
+        label: "Детайли",
+        unit: "бр",
+        rangeMin: 0,
+        rangeMax: 100,
+        aggregateMethod: "sum",
+        sampleIntervalSeconds: 60,
+        machines: [
+          { machineId: "A", points: [{ timestamp: "2026-11-23T10:00:10.000Z", value: 10 }] },
+          { machineId: "B", points: [{ timestamp: "2026-11-23T10:00:20.000Z", value: 30 }] },
+        ],
+      },
+      domain,
+    );
+    expect(series.points[0].value).toBe(40);
+    expect(series.rangeMin).toBe(0);
+    expect(series.rangeMax).toBe(200);
   });
 
   it("picks the latest sample across machines for last", () => {

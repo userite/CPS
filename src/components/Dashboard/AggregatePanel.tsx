@@ -15,6 +15,7 @@ import {
   splitOutsideRuns,
   type TrendPoint,
 } from "../../domain/machineTrend";
+import { chartsOnLinear } from "../../domain/parameterRole";
 import {
   buildRangeEvents,
   rangeEventDetail,
@@ -37,8 +38,9 @@ function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
-function isNumericMetric(series: DashboardSeries): boolean {
-  if (series.role === "status") return false;
+/** Same series as machine linear charts: metric role with numeric bounds. */
+function isAggregateCatalogSeries(series: DashboardSeries): boolean {
+  if (!chartsOnLinear(series.role)) return false;
   return (
     typeof series.rangeMin === "number" &&
     Number.isFinite(series.rangeMin) &&
@@ -63,7 +65,7 @@ function catalogFromMachines(machines: DashboardMachine[]): DashboardSeries[] {
   const byId = new Map<string, DashboardSeries>();
   for (const machine of machines) {
     for (const series of machine.series) {
-      if (!isNumericMetric(series)) continue;
+      if (!isAggregateCatalogSeries(series)) continue;
       if (!byId.has(series.parameterId)) byId.set(series.parameterId, series);
     }
   }
@@ -131,12 +133,15 @@ export function AggregatePanel({
         role: item.role,
         aggregateMethod: item.aggregateMethod,
         sampleIntervalSeconds: item.sampleIntervalSeconds,
-        machines: machines.map((machine) => {
+        machines: machines.flatMap((machine) => {
           const series = machine.series.find((row) => row.parameterId === item.parameterId);
-          return {
-            machineId: machine.id,
-            points: series?.points ?? [],
-          };
+          if (!series) return [];
+          return [
+            {
+              machineId: machine.id,
+              points: series.points,
+            },
+          ];
         }),
       }));
   }, [catalog, machines, selectedIds]);
