@@ -190,37 +190,40 @@ export function AggregatePanel({
         <p>Избраните параметри се комбинират по метода от администрацията (aggregate_method).</p>
       </header>
       <div className="agg-body">
-        <aside className="agg-params">
-          <p className="agg-params-label">Параметри</p>
-          {catalog.length === 0 ? (
-            <p className="agg-empty">Няма числови параметри с граници.</p>
+        <aside className="agg-events" aria-label="Последни събития">
+          <header className="agg-events-head">
+            <h3 className="agg-events-title">
+              <svg className="agg-events-bell" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0a3 3 0 1 1-6 0"
+                />
+              </svg>
+              Последни събития
+            </h3>
+            {rangeEvents.length > 0 && (
+              <span className="agg-events-all" title="Всички събития в прозореца">
+                Всички →
+              </span>
+            )}
+          </header>
+          {rangeEvents.length === 0 ? (
+            <p className="agg-empty">Няма пресичания на границите в прозореца.</p>
           ) : (
-            <ul className="agg-param-list">
-              {catalog.map((item) => (
-                <li key={item.parameterId}>
-                  <label className="agg-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(item.parameterId)}
-                      onChange={() => toggle(item.parameterId)}
-                    />
-                    <span className="agg-check-text">
-                      <span className="agg-check-name">{item.label}</span>
-                      <span className="agg-check-meta">
-                        {item.parameterId}
-                        {" · "}
-                        {AGGREGATE_METHOD_LABELS[item.aggregateMethod]}
-                      </span>
-                    </span>
-                  </label>
-                </li>
+            <ul className="agg-event-list">
+              {rangeEvents.map((event) => (
+                <RangeEventRow key={eventKey(event)} event={event} />
               ))}
             </ul>
           )}
         </aside>
         <div className="agg-chart">
           {selectedIds.length === 0 ? (
-            <p className="agg-empty">Маркирайте параметър отляво.</p>
+            <p className="agg-empty">Маркирайте параметър отдясно.</p>
           ) : !plotted ? (
             <p className="agg-empty">Няма данни за избраните параметри в прозореца.</p>
           ) : (
@@ -388,33 +391,30 @@ export function AggregatePanel({
             </>
           )}
         </div>
-        <aside className="agg-events" aria-label="Последни събития">
-          <header className="agg-events-head">
-            <h3 className="agg-events-title">
-              <svg className="agg-events-bell" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0a3 3 0 1 1-6 0"
-                />
-              </svg>
-              Последни събития
-            </h3>
-            {rangeEvents.length > 0 && (
-              <span className="agg-events-all" title="Всички събития в прозореца">
-                Всички →
-              </span>
-            )}
-          </header>
-          {rangeEvents.length === 0 ? (
-            <p className="agg-empty">Няма пресичания на границите в прозореца.</p>
+        <aside className="agg-params">
+          <p className="agg-params-label">Параметри</p>
+          {catalog.length === 0 ? (
+            <p className="agg-empty">Няма числови параметри с граници.</p>
           ) : (
-            <ul className="agg-event-list">
-              {rangeEvents.map((event) => (
-                <RangeEventRow key={eventKey(event)} event={event} />
+            <ul className="agg-param-list">
+              {catalog.map((item) => (
+                <li key={item.parameterId}>
+                  <label className="agg-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(item.parameterId)}
+                      onChange={() => toggle(item.parameterId)}
+                    />
+                    <span className="agg-check-text">
+                      <span className="agg-check-name">{item.label}</span>
+                      <span className="agg-check-meta">
+                        {item.parameterId}
+                        {" · "}
+                        {AGGREGATE_METHOD_LABELS[item.aggregateMethod]}
+                      </span>
+                    </span>
+                  </label>
+                </li>
               ))}
             </ul>
           )}

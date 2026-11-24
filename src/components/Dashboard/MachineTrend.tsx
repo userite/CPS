@@ -134,7 +134,7 @@ export function MachineTrend({
             viewBox={`0 0 ${TREND_VIEW.w} ${TREND_VIEW.h}`}
             role="img"
             aria-label={`${machine.name}. ${summary}`}
-            preserveAspectRatio="xMidYMid meet"
+            preserveAspectRatio="none"
             onMouseLeave={() => setHover(null)}
           >
             <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
