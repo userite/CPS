@@ -13,6 +13,7 @@ import {
   rangeFromStates,
 } from "../domain/normalizeParameterStates";
 import { resolveParameterRole, type ParameterStateDef } from "../domain/parameterRole";
+import { effectiveSampleIntervalMs } from "../config/dashboard";
 import {
   BlondinaInputError,
   nextGeneratedValue,
@@ -33,6 +34,7 @@ import {
   type ParameterRole,
   type ParameterRow,
 } from "./blondina";
+import { getSampleSpeedFactor } from "./sampleSpeedFactor";
 
 const MAX_GENERATED_ROWS = 20_000;
 
@@ -663,7 +665,11 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
       }
       return { inserted: pending.length, skipped };
     },
-    async appendDueSamples(now = new Date(), random = Math.random) {
+    async appendDueSamples(
+      now = new Date(),
+      random = Math.random,
+      speedFactor = getSampleSpeedFactor(),
+    ) {
       const nowMs = now.getTime();
       if (!Number.isFinite(nowMs)) return 0;
       const statesMap = await loadStatesMap();
@@ -681,7 +687,7 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
       `);
       const pending: Array<{ machineId: string; parameterId: string; measuredAt: string; value: number }> = [];
       for (const row of series.recordset) {
-        const intervalMs = Number(row.sampleIntervalSeconds) * 1000;
+        const intervalMs = effectiveSampleIntervalMs(Number(row.sampleIntervalSeconds), speedFactor);
         const last = await pool
           .request()
           .input("machineId", sql.NVarChar(64), String(row.machineId))

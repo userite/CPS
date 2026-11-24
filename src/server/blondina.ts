@@ -18,6 +18,8 @@ import {
   type ParameterRole,
   type ParameterStateDef,
 } from "../domain/parameterRole";
+import { effectiveSampleIntervalMs } from "../config/dashboard";
+import { getSampleSpeedFactor } from "./sampleSpeedFactor";
 
 export type { AggregateMethod };
 
@@ -144,7 +146,7 @@ export type Blondina = {
   updateParameter: (input: ParameterInput) => void;
   deleteParameter: (id: string) => void;
   generate: (input: { from: string; to: string }, random?: () => number) => GenerateResult;
-  appendDueSamples: (now?: Date, random?: () => number) => number;
+  appendDueSamples: (now?: Date, random?: () => number, speedFactor?: number) => number;
   readFirstObject: (windowMs: number) => FirstObjectReading;
   readDashboard: (windowMs: number) => DashboardReading;
   clearMeasurements: (machineId?: string) => number;
@@ -725,7 +727,7 @@ export function openBlondina(dbPath: string): Blondina {
       }
       return { inserted, skipped };
     },
-    appendDueSamples(now = new Date(), random = Math.random) {
+    appendDueSamples(now = new Date(), random = Math.random, speedFactor = getSampleSpeedFactor()) {
       const nowMs = now.getTime();
       if (!Number.isFinite(nowMs)) return 0;
       const statesMap = loadStatesMap(db);
@@ -758,7 +760,7 @@ export function openBlondina(dbPath: string): Blondina {
       db.exec("BEGIN");
       try {
         for (const row of series) {
-          const intervalMs = Number(row.sampleIntervalSeconds) * 1000;
+          const intervalMs = effectiveSampleIntervalMs(Number(row.sampleIntervalSeconds), speedFactor);
           const last = lastSample.get(String(row.machineId), String(row.parameterId));
           const lastMs = last ? Date.parse(String(last.measuredAt)) : Number.NaN;
           if (Number.isFinite(lastMs) && nowMs - lastMs < intervalMs) continue;

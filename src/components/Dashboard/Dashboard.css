@@ -273,14 +273,34 @@
   align-self: stretch;
 }
 
-.trend-time {
+.trend-xaxis {
+  stroke: var(--card-border);
+  stroke-width: 1;
+}
+
+.trend-xtick-mark {
+  stroke: var(--text-muted);
+  stroke-width: 0.75;
+}
+
+.trend-xticks {
+  position: relative;
   grid-column: 2;
-  display: flex;
-  justify-content: space-between;
-  margin: 0.12rem 0 0;
+  height: 0.85rem;
+  margin: 0.08rem 0 0;
+  padding: 0;
+}
+
+.trend-xtick-label {
+  position: absolute;
+  top: 0.05rem;
+  transform: translateX(-50%);
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .trend-svg-spacer {
