@@ -8,6 +8,17 @@ export function formatTime(iso: string): string {
   }).format(date);
 }
 
+/** Event journal times include seconds. */
+export function formatTimeSeconds(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat("bg-BG", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat("bg-BG", { maximumFractionDigits: 1 }).format(value);
 }
