@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_STATUS_STATES } from "./parameterRole";
-import { buildRangeEvents, isOutOfRange, rangeEventSeriesFromMachines } from "./rangeEvents";
+import {
+  buildRangeEvents,
+  isOutOfRange,
+  rangeEventDetail,
+  rangeEventSeriesFromMachines,
+  rangeEventTitle,
+} from "./rangeEvents";
 
 const t0 = "2026-11-24T08:00:00.000Z";
 const t1 = "2026-11-24T08:01:00.000Z";
@@ -72,6 +78,8 @@ describe("buildRangeEvents", () => {
     expect(events[1]?.timestamp).toBe(t1);
     expect(events[1]?.value).toBe(130);
     expect(events[1]?.color).toBe("#7ec8ff");
+    expect(events[1]?.rangeMin).toBe(0);
+    expect(events[1]?.rangeMax).toBe(100);
   });
 
   it("emits an out event when the series starts already outside", () => {
@@ -128,9 +136,12 @@ describe("buildRangeEvents", () => {
     expect(events[1]?.kind).toBe("out_of_range");
     expect(events[1]?.timestamp).toBe(t1);
     expect(events[1]?.value).toBe(1);
+    expect(events[1]?.stateLabel).toBe("авария");
+    expect(events[1]?.color).toBe("#e53935");
     expect(events[0]?.kind).toBe("back_in_range");
     expect(events[0]?.timestamp).toBe(t4);
     expect(events[0]?.value).toBe(0);
+    expect(events[0]?.stateLabel).toBe("работи");
   });
 
   it("skips plan/report roles", () => {
@@ -154,6 +165,34 @@ describe("buildRangeEvents", () => {
       ["plan"],
     );
     expect(events).toHaveLength(0);
+  });
+
+  it("formats mockup-style title and detail text", () => {
+    const [back, leave] = buildRangeEvents(
+      [
+        {
+          machineId: "M1",
+          machineName: "Струг 1",
+          parameterId: "speed",
+          label: "Скорост",
+          unit: "об/мин",
+          rangeMin: 0,
+          rangeMax: 100,
+          color: "#7ec8ff",
+          role: "metric",
+          points: [
+            { timestamp: t0, value: 40 },
+            { timestamp: t1, value: 130 },
+            { timestamp: t2, value: 50 },
+          ],
+        },
+      ],
+      ["speed"],
+    );
+    expect(rangeEventTitle(leave!)).toBe("Скорост");
+    expect(rangeEventDetail(leave!, String)).toBe("130 об/мин (норма < 100)");
+    expect(rangeEventTitle(back!)).toBe("Скорост в норма");
+    expect(rangeEventDetail(back!, String)).toBe("50 об/мин (в норма)");
   });
 
   it("flattens machines into metric and status series only", () => {

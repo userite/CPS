@@ -6,7 +6,7 @@ import {
 } from "../../domain/aggregateAcrossMachines";
 import { AGGREGATE_METHOD_LABELS } from "../../domain/aggregateMethod";
 import { chartTimeTicks } from "../../domain/chartTimeTicks";
-import { formatNumber, formatTime, formatTimeSeconds } from "../../domain/format";
+import { formatNumber, formatTime } from "../../domain/format";
 import {
   OUT_OF_RANGE_COLOR,
   TREND_VIEW,
@@ -17,7 +17,9 @@ import {
 } from "../../domain/machineTrend";
 import {
   buildRangeEvents,
+  rangeEventDetail,
   rangeEventSeriesFromMachines,
+  rangeEventTitle,
   type RangeEvent,
 } from "../../domain/rangeEvents";
 import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
@@ -386,8 +388,27 @@ export function AggregatePanel({
             </>
           )}
         </div>
-        <aside className="agg-events" aria-label="Събития извън границите">
-          <p className="agg-events-label">Събития</p>
+        <aside className="agg-events" aria-label="Последни събития">
+          <header className="agg-events-head">
+            <h3 className="agg-events-title">
+              <svg className="agg-events-bell" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0a3 3 0 1 1-6 0"
+                />
+              </svg>
+              Последни събития
+            </h3>
+            {rangeEvents.length > 0 && (
+              <span className="agg-events-all" title="Всички събития в прозореца">
+                Всички →
+              </span>
+            )}
+          </header>
           {rangeEvents.length === 0 ? (
             <p className="agg-empty">Няма пресичания на границите в прозореца.</p>
           ) : (
@@ -408,21 +429,22 @@ function eventKey(event: RangeEvent): string {
 }
 
 function RangeEventRow({ event }: { event: RangeEvent }) {
-  const valueText = `${formatNumber(event.value)}${event.unit ? ` ${event.unit}` : ""}`;
-  const kindText = event.kind === "out_of_range" ? "извън" : "в норма";
+  const title = rangeEventTitle(event);
+  const detail = rangeEventDetail(event, formatNumber);
   return (
     <li className={`agg-event agg-event-${event.kind}`}>
-      <i style={{ background: event.color }} aria-hidden="true" />
-      <span className="agg-event-time">{formatTimeSeconds(event.timestamp)}</span>
-      <span className="agg-event-machine" title={event.machineName}>
-        {event.machineName}
+      <span className="agg-event-rail" aria-hidden="true">
+        <i style={{ background: event.color }} />
       </span>
-      <span className="agg-event-param" title={event.parameterLabel}>
-        {event.parameterLabel}
-      </span>
-      <span className="agg-event-value" title={`${kindText}: ${valueText}`}>
-        {valueText}
-      </span>
+      <div className="agg-event-body">
+        <span className="agg-event-time">{formatTime(event.timestamp)}</span>
+        <p className="agg-event-title">
+          <strong>{event.machineName}</strong>
+          {" – "}
+          <span>{title}</span>
+        </p>
+        <p className="agg-event-detail">{detail}</p>
+      </div>
     </li>
   );
 }
