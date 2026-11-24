@@ -62,4 +62,19 @@ describe("MachineTrend OOR markers", () => {
     });
     expect(oorMarkers).toHaveLength(0);
   });
+
+  it("renders shared X tick labels for the card chart time domain", () => {
+    const tMax = Date.parse("2026-11-23T16:00:00");
+    const tMin = tMax - 4 * 60 * 60_000;
+    const { container } = render(
+      <MachineTrend
+        machine={machineWithOor()}
+        orderedIds={["speed"]}
+        timeDomain={{ tMin, tMax }}
+      />,
+    );
+    const labels = container.querySelectorAll(".trend-xtick-label");
+    expect(labels.length).toBeGreaterThanOrEqual(3);
+    expect(container.querySelectorAll(".trend-xtick-mark").length).toBeGreaterThanOrEqual(3);
+  });
 });

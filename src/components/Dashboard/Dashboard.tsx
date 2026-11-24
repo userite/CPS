@@ -9,10 +9,14 @@ import {
   writeStoredTabloBackground,
 } from "../../config/backgrounds";
 import {
+  chartSpeedFactorChoices,
+  chartSpeedFactorDefault,
+  chartSpeedFactorStorageKey,
   chartWindowDomain,
   chartWindowHourChoices,
   chartWindowHoursDefault,
   chartWindowHoursStorageKey,
+  normalizeChartSpeedFactor,
   normalizeChartWindowHours,
   readerIntervalMs,
 } from "../../config/dashboard";
@@ -29,8 +33,29 @@ function readStoredHours(): number {
   }
 }
 
+function readStoredSpeedFactor(): number {
+  try {
+    return normalizeChartSpeedFactor(window.localStorage.getItem(chartSpeedFactorStorageKey));
+  } catch {
+    return chartSpeedFactorDefault;
+  }
+}
+
+async function pushSpeedFactor(factor: number): Promise<void> {
+  try {
+    await fetch("/api/cps/speed-factor", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ factor }),
+    });
+  } catch {
+    /* writer keeps previous factor until next successful sync */
+  }
+}
+
 export function Dashboard() {
   const [windowHours, setWindowHours] = useState(chartWindowHoursDefault);
+  const [speedFactor, setSpeedFactor] = useState(chartSpeedFactorDefault);
   const [background, setBackground] = useState<TabloBackgroundId>(tabloBackgroundDefault);
   const [reading, setReading] = useState<DashboardReading | null>(null);
   const [readAt, setReadAt] = useState<Date | null>(null);
@@ -38,6 +63,7 @@ export function Dashboard() {
 
   useEffect(() => {
     setWindowHours(readStoredHours());
+    setSpeedFactor(readStoredSpeedFactor());
     setBackground(readStoredTabloBackground());
   }, []);
 
@@ -48,6 +74,15 @@ export function Dashboard() {
       /* ignore quota / private mode */
     }
   }, [windowHours]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(chartSpeedFactorStorageKey, String(speedFactor));
+    } catch {
+      /* ignore quota / private mode */
+    }
+    void pushSpeedFactor(speedFactor);
+  }, [speedFactor]);
 
   useEffect(() => {
     applyTabloBackground(background);
@@ -121,6 +156,20 @@ export function Dashboard() {
               ))}
             </select>
           </label>
+          <label className="dash-window">
+            Скорост
+            <select
+              value={speedFactor}
+              onChange={(event) => setSpeedFactor(normalizeChartSpeedFactor(event.target.value))}
+              aria-label="Множител на честотата на семплиране"
+            >
+              {chartSpeedFactorChoices.map((factor) => (
+                <option key={factor} value={factor}>
+                  ×{factor}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>{`Четене на всеки ${readerIntervalMs / 1000} сек`}</span>
           {readLabel && <time dateTime={readAt?.toISOString()}>{readLabel}</time>}
         </div>
@@ -128,6 +177,9 @@ export function Dashboard() {
       <p className="demo-note">
         Всяка линия е процент от границите на своя параметър. По вертикала 0% е долната граница, а 100% е горната.
         По хоризонтала е последните {windowHours} {windowHours === 1 ? "час" : "часа"}.
+        {speedFactor > 1
+          ? ` Живата генерация е ×${speedFactor} спрямо честотата от администрацията.`
+          : ""}
       </p>
       {error && <p className="dash-error">{error}</p>}
       <section className="trend-list" aria-label="Графики по машини">

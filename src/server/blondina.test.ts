@@ -121,9 +121,9 @@ describe("blondina", () => {
       sampleIntervalSeconds: 60,
       machineIds: ["LATHE_01"],
     });
-    expect(db.appendDueSamples(new Date("2026-10-30T10:00:00.000Z"), () => 0.5)).toBe(1);
-    expect(db.appendDueSamples(new Date("2026-10-30T10:00:30.000Z"), () => 0.5)).toBe(0);
-    expect(db.appendDueSamples(new Date("2026-10-30T10:01:00.000Z"), () => 0.5)).toBe(1);
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:00.000Z"), () => 0.5, 1)).toBe(1);
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:30.000Z"), () => 0.5, 1)).toBe(0);
+    expect(db.appendDueSamples(new Date("2026-10-30T10:01:00.000Z"), () => 0.5, 1)).toBe(1);
 
     const reading = db.readFirstObject(10 * 365 * 24 * 60 * 60_000);
     expect(reading.machine?.id).toBe("LATHE_01");
@@ -134,6 +134,24 @@ describe("blondina", () => {
     expect(spindleChart?.points.every((point) => point.value != null && point.value >= 0 && point.value <= 1000)).toBe(
       true,
     );
+    db.close();
+  });
+
+  it("speeds up live samples by the runtime factor without changing stored interval", () => {
+    const db = openBlondina(":memory:");
+    const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
+    db.updateParameter({
+      ...spindle,
+      rangeMin: 0,
+      rangeMax: 1000,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01"],
+    });
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:00.000Z"), () => 0.5, 2)).toBe(1);
+    // Factor 2 → due every 30s; still skipped at +20s.
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:20.000Z"), () => 0.5, 2)).toBe(0);
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:30.000Z"), () => 0.5, 2)).toBe(1);
+    expect(db.getState().parameters.find((p) => p.id === "spindle_speed")?.sampleIntervalSeconds).toBe(60);
     db.close();
   });
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
   OUT_OF_RANGE_COLOR,
@@ -15,6 +16,12 @@ import type { DashboardMachine } from "../../server/blondina";
 
 const STATUS_VIEW_H = 4;
 const RING_FALLBACK_COLOR = "#3ddc97";
+/** Same X-axis geometry as AggregatePanel (pre-scale TREND_VIEW coords). */
+const AXIS_ORIGIN_X = 2;
+const AXIS_ORIGIN_Y = TREND_VIEW.h - 0.35;
+const AXIS_RIGHT_X = TREND_VIEW.w - 2;
+const X_TICK_LEN = 1.1;
+const STATUS_TICK_LEN = 0.7;
 
 function pointsOf(segment: TrendPoint[]): string {
   return segment.map((point) => `${point.x},${point.y}`).join(" ");
@@ -99,8 +106,10 @@ export function MachineTrend({
   const [hover, setHover] = useState<TrendPoint | null>(null);
   const [statusHover, setStatusHover] = useState<string | null>(null);
   const plotted = lines.some((line) => line.plotted);
-  const timeStart = new Date(timeDomain.tMin).toISOString();
-  const timeEnd = new Date(timeDomain.tMax).toISOString();
+  const xTicks = useMemo(
+    () => chartTimeTicks(timeDomain.tMin, timeDomain.tMax),
+    [timeDomain.tMin, timeDomain.tMax],
+  );
   const summary = lines
     .map((line) => {
       if (!line.plotted || line.lastPercent == null) return `${line.label}: няма скала или данни`;
@@ -139,6 +148,25 @@ export function MachineTrend({
           >
             <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y0} y2={y0} />
             <line className="trend-guide" x1="0" x2={TREND_VIEW.w} y1={y100} y2={y100} />
+            <line
+              className="trend-xaxis"
+              x1={AXIS_ORIGIN_X}
+              x2={AXIS_RIGHT_X}
+              y1={AXIS_ORIGIN_Y}
+              y2={AXIS_ORIGIN_Y}
+              vectorEffect="non-scaling-stroke"
+            />
+            {xTicks.map((tick) => (
+              <line
+                key={`xtick-${tick.t}`}
+                className="trend-xtick-mark"
+                x1={tick.x}
+                x2={tick.x}
+                y1={AXIS_ORIGIN_Y - X_TICK_LEN}
+                y2={AXIS_ORIGIN_Y}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
             {lines.map((line) =>
               line.segments.flatMap((segment, segmentIndex) =>
                 splitOutsideRuns(segment).map((run, runIndex) => {
@@ -214,14 +242,32 @@ export function MachineTrend({
                   <title>{statusHoverText(segment)}</title>
                 </rect>
               ))}
+              {xTicks.map((tick) => (
+                <line
+                  key={`status-xtick-${strip.parameterId}-${tick.t}`}
+                  className="trend-xtick-mark"
+                  x1={tick.x}
+                  x2={tick.x}
+                  y1={STATUS_VIEW_H - STATUS_TICK_LEN}
+                  y2={STATUS_VIEW_H}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
             </svg>
           </div>
         ))}
-        {timeStart && timeEnd && (
-          <p className="trend-time">
-            <time dateTime={timeStart}>{formatTime(timeStart)}</time>
-            <time dateTime={timeEnd}>{formatTime(timeEnd)}</time>
-          </p>
+        {xTicks.length > 0 && (
+          <div className="trend-xticks" aria-hidden="true">
+            {xTicks.map((tick) => (
+              <span
+                key={`xlabel-${tick.t}`}
+                className="trend-xtick-label"
+                style={{ left: `${(tick.x / TREND_VIEW.w) * 100}%` }}
+              >
+                {tick.label}
+              </span>
+            ))}
+          </div>
         )}
         </div>
       ) : (

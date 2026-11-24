@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { BlondinaInputError, type AsyncBlondina, type MachineInput, type ParameterInput } from "./blondina";
+import { getSampleSpeedFactor, setSampleSpeedFactor } from "./sampleSpeedFactor";
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -104,6 +105,18 @@ export async function handleBlondinaRequest(
     if (req.method === "POST" && url.pathname === "/api/cps/generate") {
       const body = (await readJson(req)) as { from?: string; to?: string };
       send(res, 200, await db.generate({ from: String(body.from ?? ""), to: String(body.to ?? "") }));
+      return true;
+    }
+    if (req.method === "GET" && url.pathname === "/api/cps/speed-factor") {
+      send(res, 200, { factor: getSampleSpeedFactor() });
+      return true;
+    }
+    if (
+      (req.method === "PUT" || req.method === "POST") &&
+      url.pathname === "/api/cps/speed-factor"
+    ) {
+      const body = (await readJson(req)) as { factor?: unknown };
+      send(res, 200, { factor: setSampleSpeedFactor(body.factor) });
       return true;
     }
     if (req.method === "DELETE" && url.pathname === "/api/cps/measurements") {
