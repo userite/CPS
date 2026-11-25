@@ -273,12 +273,14 @@
   align-self: stretch;
 }
 
-.trend-xaxis {
+.trend-xaxis,
+.trend-yaxis-line {
   stroke: var(--card-border);
   stroke-width: 1;
 }
 
-.trend-xtick-mark {
+.trend-xtick-mark,
+.trend-ytick-mark {
   stroke: var(--text-muted);
   stroke-width: 0.75;
 }

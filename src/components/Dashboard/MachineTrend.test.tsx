@@ -77,4 +77,21 @@ describe("MachineTrend OOR markers", () => {
     expect(labels.length).toBeGreaterThanOrEqual(3);
     expect(container.querySelectorAll(".trend-xtick-mark").length).toBeGreaterThanOrEqual(3);
   });
+
+  it("draws a Y spine that meets the X baseline at the origin corner", () => {
+    const { container } = render(
+      <MachineTrend
+        machine={machineWithOor()}
+        orderedIds={["speed"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+    const ySpine = container.querySelector(".trend-yaxis-line");
+    const xAxis = container.querySelector(".trend-xaxis");
+    expect(ySpine).not.toBeNull();
+    expect(xAxis).not.toBeNull();
+    expect(ySpine?.getAttribute("x1")).toBe(xAxis?.getAttribute("x1"));
+    expect(ySpine?.getAttribute("y2")).toBe(xAxis?.getAttribute("y1"));
+    expect(container.querySelectorAll(".trend-ytick-mark")).toHaveLength(2);
+  });
 });
