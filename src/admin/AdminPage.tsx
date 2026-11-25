@@ -407,7 +407,8 @@ export function AdminPage() {
                 </label>
                 <p className="admin-muted">
                   Поле <span className="admin-path">aggregate_method</span> за долната обща графика на
-                  таблото. Ако в базата е празно: sum за бройни (count / брой / детайли), иначе avg.{" "}
+                  таблото. Важи за линейна, план и отчет (вкл. last). Ако в базата е празно: sum за
+                  бройни (count / брой / детайли), иначе avg.{" "}
                   Предложение според името:{" "}
                   <button
                     type="button"
@@ -434,7 +435,8 @@ export function AdminPage() {
                     }
                   </button>
                   . Методи: sum, avg, last (най-късен sample в кофата), min, max, count (брой машини с
-                  валидна стойност).
+                  валидна стойност). На таблото отчетът винаги се комбинира като sum след последния
+                  план; планът ползва избрания метод.
                 </p>
                 <label>
                   Единица
