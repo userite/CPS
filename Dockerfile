@@ -16,6 +16,7 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/server ./src/server
 COPY --from=build /app/src/domain ./src/domain
+COPY --from=build /app/src/config ./src/config
 COPY --from=build /app/db ./db
 EXPOSE 3000
 CMD ["node_modules/.bin/tsx", "src/server/prod.ts"]
