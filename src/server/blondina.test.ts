@@ -155,6 +155,36 @@ describe("blondina", () => {
     db.close();
   });
 
+  it("persists aggregate_method on parameter edit", () => {
+    const db = openBlondina(":memory:");
+    const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
+    expect(spindle.aggregateMethod).toBe("avg");
+
+    db.updateParameter({
+      ...spindle,
+      aggregateMethod: "max",
+    });
+    expect(db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")?.aggregateMethod).toBe(
+      "max",
+    );
+
+    db.updateParameter({
+      ...spindle,
+      aggregateMethod: "sum",
+    });
+    expect(db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")?.aggregateMethod).toBe(
+      "sum",
+    );
+
+    expect(() =>
+      db.updateParameter({
+        ...spindle,
+        aggregateMethod: "nope",
+      }),
+    ).toThrow(BlondinaInputError);
+    db.close();
+  });
+
   it("clears measurements for one selected machine only", () => {
     const db = openBlondina(":memory:");
     const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
