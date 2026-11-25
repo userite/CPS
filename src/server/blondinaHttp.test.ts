@@ -66,4 +66,56 @@ describe("blondinaHttp parameters", () => {
     );
     db.close();
   });
+
+  it("allows aggregateMethod=last for plan and report roles", async () => {
+    const db = openBlondina(":memory:");
+    for (const role of ["plan", "report"] as const) {
+      const create = mockRes();
+      expect(
+        await handleBlondinaRequest(
+          db,
+          mockReq("POST", "/api/cps/parameters", {
+            id: `${role}_qty`,
+            label: role === "plan" ? "План" : "Отчет",
+            unit: "бр",
+            rangeMin: 0,
+            rangeMax: 100,
+            sampleIntervalSeconds: 60,
+            role,
+            aggregateMethod: "last",
+            machineIds: ["LATHE_01"],
+          }),
+          create,
+        ),
+      ).toBe(true);
+      expect(create.statusCode).toBe(200);
+
+      const update = mockRes();
+      expect(
+        await handleBlondinaRequest(
+          db,
+          mockReq("PUT", "/api/cps/parameters", {
+            id: `${role}_qty`,
+            label: role === "plan" ? "План" : "Отчет",
+            unit: "бр",
+            rangeMin: 0,
+            rangeMax: 100,
+            sampleIntervalSeconds: 60,
+            role,
+            aggregateMethod: "last",
+            machineIds: ["LATHE_01"],
+          }),
+          update,
+        ),
+      ).toBe(true);
+      expect(update.statusCode).toBe(200);
+      const state = JSON.parse(update.body) as {
+        parameters: Array<{ id: string; role: string; aggregateMethod: string }>;
+      };
+      const row = state.parameters.find((parameter) => parameter.id === `${role}_qty`);
+      expect(row?.role).toBe(role);
+      expect(row?.aggregateMethod).toBe("last");
+    }
+    db.close();
+  });
 });
