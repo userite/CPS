@@ -154,6 +154,7 @@ export function MachineTrend({
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error || "Статусът не се записа.");
       onStatusChanged?.();
+      setStatusModalOpen(false);
     } catch (reason) {
       setStatusError(reason instanceof Error ? reason.message : "Статусът не се записа.");
     } finally {
@@ -180,6 +181,7 @@ export function MachineTrend({
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error || "Коментарът не се записа.");
       onStatusChanged?.();
+      setStatusModalOpen(false);
     } catch (reason) {
       setStatusError(reason instanceof Error ? reason.message : "Коментарът не се записа.");
     } finally {
@@ -423,7 +425,7 @@ export function MachineTrend({
               setStatusModalOpen(true);
             }}
           >
-            Статус / коментар
+            Статус
           </button>
         ) : null}
       </div>

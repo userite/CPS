@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OUT_OF_RANGE_COLOR } from "../../domain/machineTrend";
 import type { DashboardMachine } from "../../server/blondina";
 import { MachineTrend } from "./MachineTrend";
@@ -151,6 +151,11 @@ describe("MachineTrend OOR markers", () => {
 });
 
 describe("MachineTrend status modal", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("keeps status/comment controls out of the card until the foot button opens the modal", () => {
     render(
       <MachineTrend
@@ -160,12 +165,12 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Статус / коментар" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Статус" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Статус за Струг 1")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Коментар за Струг 1")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус / коментар" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
 
     expect(screen.getByRole("dialog", { name: "Статус — Струг 1" })).toBeInTheDocument();
     expect(screen.getByLabelText("Статус за Струг 1")).toHaveValue("1");
@@ -182,16 +187,66 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус / коментар" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
     fireEvent.click(screen.getByRole("button", { name: "Затвори" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус / коментар" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
     fireEvent.click(document.querySelector(".trend-status-modal-backdrop")!);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус / коментар" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes the modal after a successful comment save", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      }),
+    );
+
+    render(
+      <MachineTrend
+        machine={machineWithStatus()}
+        orderedIds={["speed", "machine_status"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запази коментар" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes the modal after a successful status change", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      }),
+    );
+
+    render(
+      <MachineTrend
+        machine={machineWithStatus()}
+        orderedIds={["speed", "machine_status"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.change(screen.getByLabelText("Статус за Струг 1"), { target: { value: "0" } });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 });
