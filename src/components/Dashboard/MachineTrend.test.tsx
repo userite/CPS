@@ -14,6 +14,7 @@ function machineWithOor(): DashboardMachine {
     id: "LATHE_01",
     name: "Струг 1",
     model: "DMG",
+    manualStatus: null,
     series: [
       {
         parameterId: "speed",

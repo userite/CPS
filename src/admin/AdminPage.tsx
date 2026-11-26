@@ -484,6 +484,7 @@ export function AdminPage() {
                 <legend>Състояния</legend>
                 <p className="admin-muted">
                   Стойност · текст · цвят. Пример: 0 работи зелено, 1 авария червено, 2 технологичен престой жълто.
+                  Статусът се задава ръчно от таблото (не се генерира). Коментар към авария се пише после на таблото.
                 </p>
                 {parameterDraft.states.map((state, index) => (
                   <div key={index} className="admin-state-row">
@@ -555,6 +556,11 @@ export function AdminPage() {
                 }
               />
             </label>
+            {parameterDraft.role === "status" ? (
+              <p className="admin-muted">
+                За статус честотата не се ползва — стойностите се пишат ръчно от таблото.
+              </p>
+            ) : null}
             <fieldset>
               <legend>Машини</legend>
               {state?.machines.map((machine) => (

@@ -18,12 +18,13 @@ import {
 import { resolveParameterRole } from "../../domain/parameterRole";
 import {
   buildRangeEvents,
+  mergeDashboardEvents,
   rangeEventDetail,
   rangeEventSeriesFromMachines,
   rangeEventTitle,
   type RangeEvent,
 } from "../../domain/rangeEvents";
-import type { DashboardMachine, DashboardSeries } from "../../server/blondina";
+import type { DashboardMachine, DashboardSeries, StatusEventRow } from "../../server/blondina";
 
 const AGGREGATE_VIEW = { w: TREND_VIEW.w, h: 48 };
 /** Axes meet at bottom-left origin (pre-scale TREND_VIEW coords). */
@@ -77,10 +78,12 @@ export function AggregatePanel({
   machines,
   orderedIds,
   timeDomain,
+  statusEvents = [],
 }: {
   machines: DashboardMachine[];
   orderedIds: string[];
   timeDomain: { tMin: number; tMax: number };
+  statusEvents?: StatusEventRow[];
 }) {
   const catalog = useMemo(() => catalogFromMachines(machines), [machines]);
   const catalogIds = useMemo(() => catalog.map((item) => item.parameterId), [catalog]);
@@ -168,8 +171,12 @@ export function AggregatePanel({
   );
 
   const rangeEvents = useMemo(
-    () => buildRangeEvents(rangeEventSeriesFromMachines(machines), orderedIds),
-    [machines, orderedIds],
+    () =>
+      mergeDashboardEvents(
+        buildRangeEvents(rangeEventSeriesFromMachines(machines), orderedIds),
+        statusEvents,
+      ),
+    [machines, orderedIds, statusEvents],
   );
 
   const plotted = lines.some((line) => line.plotted);
@@ -228,7 +235,7 @@ export function AggregatePanel({
             )}
           </header>
           {rangeEvents.length === 0 ? (
-            <p className="agg-empty">Няма пресичания на границите в прозореца.</p>
+            <p className="agg-empty">Няма събития в прозореца.</p>
           ) : (
             <ul className="agg-event-list">
               {rangeEvents.map((event) => (
@@ -446,7 +453,7 @@ export function AggregatePanel({
 }
 
 function eventKey(event: RangeEvent): string {
-  return `${event.machineId}-${event.parameterId}-${event.timestamp}-${event.kind}`;
+  return `${event.machineId}-${event.parameterId}-${event.timestamp}-${event.kind}-${event.comment ?? ""}`;
 }
 
 function RangeEventRow({ event }: { event: RangeEvent }) {

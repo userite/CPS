@@ -5,7 +5,6 @@ import { DatabaseSync } from "node:sqlite";
 import {
   parseParameterRole,
   parseStates,
-  pickStateValue,
   rangeFromStates,
 } from "../domain/normalizeParameterStates";
 import {
@@ -124,15 +123,55 @@ export type DashboardSeries = {
   points: Array<{ timestamp: string; value: number | null }>;
 };
 
+export type StatusEventKind = "status_change" | "comment_update";
+
+/** Latest operator-set status for a machine on the табло. */
+export type ManualMachineStatus = {
+  parameterId: string;
+  value: number;
+  label: string;
+  color: string;
+  comment: string;
+  updatedAt: string;
+};
+
+export type StatusEventRow = {
+  id: number;
+  machineId: string;
+  machineName: string;
+  parameterId: string;
+  parameterLabel: string;
+  value: number;
+  stateLabel: string;
+  color: string;
+  comment: string;
+  kind: StatusEventKind;
+  createdAt: string;
+};
+
 export type DashboardMachine = {
   id: string;
   name: string;
   model: string | null;
   series: DashboardSeries[];
+  manualStatus: ManualMachineStatus | null;
 };
 
 export type DashboardReading = {
   machines: DashboardMachine[];
+  statusEvents: StatusEventRow[];
+};
+
+export type SetMachineStatusInput = {
+  machineId: string;
+  value: number;
+  /** When omitted on status change, previous comment is kept. */
+  comment?: string | null;
+};
+
+export type SetMachineStatusCommentInput = {
+  machineId: string;
+  comment: string;
 };
 
 export type Blondina = {
@@ -147,6 +186,8 @@ export type Blondina = {
   deleteParameter: (id: string) => void;
   generate: (input: { from: string; to: string }, random?: () => number) => GenerateResult;
   appendDueSamples: (now?: Date, random?: () => number, speedFactor?: number) => number;
+  setMachineStatus: (input: SetMachineStatusInput, now?: Date) => ManualMachineStatus;
+  setMachineStatusComment: (input: SetMachineStatusCommentInput, now?: Date) => ManualMachineStatus;
   readFirstObject: (windowMs: number) => FirstObjectReading;
   readDashboard: (windowMs: number) => DashboardReading;
   clearMeasurements: (machineId?: string) => number;
@@ -335,6 +376,43 @@ function ensureAggregateMethodColumn(db: DatabaseSync): void {
   db.exec("ALTER TABLE cps_parameter ADD COLUMN aggregate_method TEXT");
 }
 
+function ensureStatusEventTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cps_status_event (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      machine_id    TEXT NOT NULL REFERENCES cps_machine (id) ON DELETE CASCADE,
+      parameter_id  TEXT NOT NULL REFERENCES cps_parameter (id) ON DELETE CASCADE,
+      status_value  REAL NOT NULL,
+      comment       TEXT NOT NULL DEFAULT '',
+      kind          TEXT NOT NULL CHECK (kind IN ('status_change', 'comment_update')),
+      created_at    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS cps_status_event_machine_time
+      ON cps_status_event (machine_id, created_at DESC);
+  `);
+}
+
+const MAX_STATUS_COMMENT_LENGTH = 2000;
+
+export function normalizeStatusComment(value: unknown): string {
+  const comment = value == null ? "" : String(value);
+  if (comment.length > MAX_STATUS_COMMENT_LENGTH) {
+    throw new BlondinaInputError(
+      `Коментарът е твърде дълъг (таван ${MAX_STATUS_COMMENT_LENGTH} знака).`,
+    );
+  }
+  return comment;
+}
+
+function stateMatching(
+  states: ParameterStateDef[],
+  value: number,
+): ParameterStateDef | null {
+  const exact = states.find((state) => state.value === value);
+  if (exact) return exact;
+  return null;
+}
+
 function normalizeAggregateMethodWrite(
   value: unknown,
   role: ParameterRole,
@@ -404,14 +482,12 @@ function prepareParameterWrite(input: ParameterInput): {
   if (role === "status") {
     const fromStates = rangeFromStates(states);
     if (!fromStates) throw new BlondinaInputError("Статусният параметър трябва да има състояния.");
-    if (range.sampleIntervalSeconds == null) {
-      throw new BlondinaInputError("Статусният параметър трябва да има честота.");
-    }
     return {
       role,
       states,
       rangeMin: fromStates.rangeMin,
       rangeMax: fromStates.rangeMax,
+      // Frequency unused: status is set manually on the табло, never auto-generated.
       sampleIntervalSeconds: range.sampleIntervalSeconds,
       color: null,
       aggregateMethod: null,
@@ -435,6 +511,7 @@ export function openBlondina(dbPath: string): Blondina {
   ensureColorColumn(db);
   ensureRoleAndStates(db);
   ensureAggregateMethodColumn(db);
+  ensureStatusEventTable(db);
   seed(db);
 
   const listMachines = (): MachineRow[] =>
@@ -621,7 +698,6 @@ export function openBlondina(dbPath: string): Blondina {
       if (fromMs > toMs) {
         throw new BlondinaInputError("Началото на периода е след края.");
       }
-      const statesMap = loadStatesMap(db);
       const series = db
         .prepare(
           `SELECT mp.machine_id AS machineId, mp.parameter_id AS parameterId,
@@ -638,31 +714,17 @@ export function openBlondina(dbPath: string): Blondina {
         rangeMin: number;
         rangeMax: number;
         stepMs: number;
-        states: ParameterStateDef[];
       }> = [];
       for (const row of series) {
         const rangeMin = row.rangeMin == null ? null : Number(row.rangeMin);
         const rangeMax = row.rangeMax == null ? null : Number(row.rangeMax);
         const interval = row.sampleIntervalSeconds == null ? null : Number(row.sampleIntervalSeconds);
-        const states = statesMap.get(String(row.parameterId)) ?? [];
         const role = parseParameterRole(row.role);
         if (role === "status") {
-          if (states.length === 0 || interval == null) {
-            skipped.push({
-              machineId: String(row.machineId),
-              parameterId: String(row.parameterId),
-              reason: "липсват състояния или честота",
-            });
-            continue;
-          }
-          const fromStates = rangeFromStates(states)!;
-          runnable.push({
+          skipped.push({
             machineId: String(row.machineId),
             parameterId: String(row.parameterId),
-            rangeMin: fromStates.rangeMin,
-            rangeMax: fromStates.rangeMax,
-            stepMs: interval * 1000,
-            states,
+            reason: "статусът се задава ръчно от таблото",
           });
           continue;
         }
@@ -680,7 +742,6 @@ export function openBlondina(dbPath: string): Blondina {
           rangeMin,
           rangeMax,
           stepMs: interval * 1000,
-          states: [],
         });
       }
       const estimated = runnable.reduce((sum, item) => {
@@ -699,18 +760,6 @@ export function openBlondina(dbPath: string): Blondina {
       db.exec("BEGIN");
       try {
         for (const item of runnable) {
-          if (item.states.length > 0) {
-            for (let time = fromMs; time <= toMs; time += item.stepMs) {
-              insert.run(
-                item.machineId,
-                item.parameterId,
-                new Date(time).toISOString(),
-                pickStateValue(item.states, random),
-              );
-              inserted += 1;
-            }
-            continue;
-          }
           const span = item.rangeMax - item.rangeMin;
           let current = item.rangeMin + random() * span;
           for (let time = fromMs; time <= toMs; time += item.stepMs) {
@@ -730,7 +779,6 @@ export function openBlondina(dbPath: string): Blondina {
     appendDueSamples(now = new Date(), random = Math.random, speedFactor = getSampleSpeedFactor()) {
       const nowMs = now.getTime();
       if (!Number.isFinite(nowMs)) return 0;
-      const statesMap = loadStatesMap(db);
       const series = db
         .prepare(
           `SELECT mp.machine_id AS machineId, mp.parameter_id AS parameterId,
@@ -739,10 +787,8 @@ export function openBlondina(dbPath: string): Blondina {
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
            WHERE p.sample_interval_seconds IS NOT NULL
-             AND (
-               (p.role = 'status')
-               OR (p.range_min IS NOT NULL AND p.range_max IS NOT NULL)
-             )`,
+             AND p.range_min IS NOT NULL AND p.range_max IS NOT NULL
+             AND IFNULL(p.role, 'metric') != 'status'`,
         )
         .all();
       const lastSample = db.prepare(
@@ -760,22 +806,11 @@ export function openBlondina(dbPath: string): Blondina {
       db.exec("BEGIN");
       try {
         for (const row of series) {
+          if (parseParameterRole(row.role) === "status") continue;
           const intervalMs = effectiveSampleIntervalMs(Number(row.sampleIntervalSeconds), speedFactor);
           const last = lastSample.get(String(row.machineId), String(row.parameterId));
           const lastMs = last ? Date.parse(String(last.measuredAt)) : Number.NaN;
           if (Number.isFinite(lastMs) && nowMs - lastMs < intervalMs) continue;
-          const states = statesMap.get(String(row.parameterId)) ?? [];
-          if (parseParameterRole(row.role) === "status") {
-            if (states.length === 0) continue;
-            insert.run(
-              String(row.machineId),
-              String(row.parameterId),
-              now.toISOString(),
-              pickStateValue(states, random),
-            );
-            inserted += 1;
-            continue;
-          }
           const rangeMin = Number(row.rangeMin);
           const rangeMax = Number(row.rangeMax);
           const span = rangeMax - rangeMin;
@@ -791,6 +826,127 @@ export function openBlondina(dbPath: string): Blondina {
         throw error;
       }
       return inserted;
+    },
+    setMachineStatus(input, now = new Date()) {
+      const machineId = requireId(input.machineId, "Идентификаторът на машината");
+      const machine = db.prepare("SELECT id FROM cps_machine WHERE id = ?").get(machineId);
+      if (!machine) throw new BlondinaInputError(`Няма машина ${machineId}.`);
+      const link = db
+        .prepare(
+          `SELECT p.id AS parameterId, p.label AS label
+           FROM cps_machine_parameter mp
+           JOIN cps_parameter p ON p.id = mp.parameter_id
+           WHERE mp.machine_id = ? AND p.role = 'status'
+           ORDER BY p.label
+           LIMIT 1`,
+        )
+        .get(machineId);
+      if (!link) {
+        throw new BlondinaInputError("На машината няма присвоен статус параметър.");
+      }
+      const parameterId = String(link.parameterId);
+      const states = loadStatesMap(db).get(parameterId) ?? [];
+      const value = numberOrNull(input.value);
+      if (value == null) throw new BlondinaInputError("Стойността на статуса е задължителна.");
+      const state = stateMatching(states, value);
+      if (!state) {
+        throw new BlondinaInputError("Стойността не е сред дефинираните състояния.");
+      }
+      const previous = db
+        .prepare(
+          `SELECT comment FROM cps_status_event
+           WHERE machine_id = ?
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1`,
+        )
+        .get(machineId);
+      const comment =
+        input.comment === undefined
+          ? previous
+            ? String(previous.comment ?? "")
+            : ""
+          : normalizeStatusComment(input.comment);
+      const createdAt = now.toISOString();
+      db.exec("BEGIN");
+      try {
+        db.prepare(
+          `INSERT OR REPLACE INTO cps_measurement (machine_id, parameter_id, measured_at, value)
+           VALUES (?, ?, ?, ?)`,
+        ).run(machineId, parameterId, createdAt, value);
+        db.prepare(
+          `INSERT INTO cps_status_event
+             (machine_id, parameter_id, status_value, comment, kind, created_at)
+           VALUES (?, ?, ?, ?, 'status_change', ?)`,
+        ).run(machineId, parameterId, value, comment, createdAt);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return {
+        parameterId,
+        value: state.value,
+        label: state.label,
+        color: state.color,
+        comment,
+        updatedAt: createdAt,
+      };
+    },
+    setMachineStatusComment(input, now = new Date()) {
+      const machineId = requireId(input.machineId, "Идентификаторът на машината");
+      const machine = db.prepare("SELECT id FROM cps_machine WHERE id = ?").get(machineId);
+      if (!machine) throw new BlondinaInputError(`Няма машина ${machineId}.`);
+      const comment = normalizeStatusComment(input.comment);
+      const latest = db
+        .prepare(
+          `SELECT e.parameter_id AS parameterId, e.status_value AS statusValue
+           FROM cps_status_event e
+           WHERE e.machine_id = ?
+           ORDER BY e.created_at DESC, e.id DESC
+           LIMIT 1`,
+        )
+        .get(machineId);
+      let parameterId: string;
+      let value: number;
+      if (latest) {
+        parameterId = String(latest.parameterId);
+        value = Number(latest.statusValue);
+      } else {
+        const measurement = db
+          .prepare(
+            `SELECT m.parameter_id AS parameterId, m.value AS value
+             FROM cps_measurement m
+             JOIN cps_parameter p ON p.id = m.parameter_id
+             WHERE m.machine_id = ? AND p.role = 'status' AND m.value IS NOT NULL
+             ORDER BY m.measured_at DESC
+             LIMIT 1`,
+          )
+          .get(machineId);
+        if (!measurement) {
+          throw new BlondinaInputError("Първо задайте статус, после коментар.");
+        }
+        parameterId = String(measurement.parameterId);
+        value = Number(measurement.value);
+      }
+      const states = loadStatesMap(db).get(parameterId) ?? [];
+      const state = stateMatching(states, value);
+      if (!state) {
+        throw new BlondinaInputError("Текущият статус не съвпада с дефинираните състояния.");
+      }
+      const createdAt = now.toISOString();
+      db.prepare(
+        `INSERT INTO cps_status_event
+           (machine_id, parameter_id, status_value, comment, kind, created_at)
+         VALUES (?, ?, ?, ?, 'comment_update', ?)`,
+      ).run(machineId, parameterId, value, comment, createdAt);
+      return {
+        parameterId,
+        value: state.value,
+        label: state.label,
+        color: state.color,
+        comment,
+        updatedAt: createdAt,
+      };
     },
     readFirstObject(windowMs) {
       const machine = db
@@ -862,12 +1018,66 @@ export function openBlondina(dbPath: string): Blondina {
            ORDER BY measured_at ASC`,
         )
         .all(since);
+      const latestEvents = db
+        .prepare(
+          `SELECT e.machine_id AS machineId, e.parameter_id AS parameterId,
+                  e.status_value AS statusValue, e.comment AS comment,
+                  e.created_at AS createdAt
+           FROM cps_status_event e
+           INNER JOIN (
+             SELECT machine_id, MAX(id) AS maxId
+             FROM cps_status_event
+             GROUP BY machine_id
+           ) latest ON latest.maxId = e.id`,
+        )
+        .all();
+      const latestByMachine = new Map(
+        latestEvents.map((row) => [
+          String(row.machineId),
+          {
+            parameterId: String(row.parameterId),
+            value: Number(row.statusValue),
+            comment: String(row.comment ?? ""),
+            updatedAt: String(row.createdAt),
+          },
+        ]),
+      );
+      const statusEventRows = db
+        .prepare(
+          `SELECT e.id AS id, e.machine_id AS machineId, m.name AS machineName,
+                  e.parameter_id AS parameterId, p.label AS parameterLabel,
+                  e.status_value AS statusValue, e.comment AS comment,
+                  e.kind AS kind, e.created_at AS createdAt
+           FROM cps_status_event e
+           JOIN cps_machine m ON m.id = e.machine_id
+           JOIN cps_parameter p ON p.id = e.parameter_id
+           WHERE e.created_at >= ?
+           ORDER BY e.created_at DESC, e.id DESC`,
+        )
+        .all(since);
+      const statusEvents: StatusEventRow[] = statusEventRows.map((row) => {
+        const parameterId = String(row.parameterId);
+        const value = Number(row.statusValue);
+        const state = stateMatching(statesMap.get(parameterId) ?? [], value);
+        const kind = String(row.kind) === "comment_update" ? "comment_update" : "status_change";
+        return {
+          id: Number(row.id),
+          machineId: String(row.machineId),
+          machineName: String(row.machineName),
+          parameterId,
+          parameterLabel: String(row.parameterLabel),
+          value,
+          stateLabel: state?.label ?? String(value),
+          color: state?.color ?? "#929292",
+          comment: String(row.comment ?? ""),
+          kind,
+          createdAt: String(row.createdAt),
+        };
+      });
       return {
-        machines: machines.map((machine) => ({
-          id: String(machine.id),
-          name: String(machine.name),
-          model: machine.model == null ? null : String(machine.model),
-          series: links
+        machines: machines.map((machine) => {
+          const machineId = String(machine.id);
+          const series = links
             .filter((link) => link.machineId === machine.id)
             .map((link) => {
               const parameterId = String(link.parameterId);
@@ -906,8 +1116,49 @@ export function openBlondina(dbPath: string): Blondina {
                     value: sample.value == null ? null : Number(sample.value),
                   })),
               };
-            }),
-        })),
+            });
+          const latest = latestByMachine.get(machineId);
+          let manualStatus: ManualMachineStatus | null = null;
+          if (latest) {
+            const state = stateMatching(statesMap.get(latest.parameterId) ?? [], latest.value);
+            if (state) {
+              manualStatus = {
+                parameterId: latest.parameterId,
+                value: state.value,
+                label: state.label,
+                color: state.color,
+                comment: latest.comment,
+                updatedAt: latest.updatedAt,
+              };
+            }
+          } else {
+            const statusSeries = series.find((item) => item.role === "status" && item.states.length > 0);
+            const lastPoint = statusSeries?.points.length
+              ? statusSeries.points[statusSeries.points.length - 1]
+              : null;
+            if (statusSeries && lastPoint && lastPoint.value != null) {
+              const state = stateMatching(statusSeries.states, lastPoint.value);
+              if (state) {
+                manualStatus = {
+                  parameterId: statusSeries.parameterId,
+                  value: state.value,
+                  label: state.label,
+                  color: state.color,
+                  comment: "",
+                  updatedAt: lastPoint.timestamp,
+                };
+              }
+            }
+          }
+          return {
+            id: machineId,
+            name: String(machine.name),
+            model: machine.model == null ? null : String(machine.model),
+            series,
+            manualStatus,
+          };
+        }),
+        statusEvents,
       };
     },
     clearMeasurements(machineId) {

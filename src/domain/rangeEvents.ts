@@ -6,7 +6,25 @@ import {
   type ParameterStateDef,
 } from "./parameterRole";
 
-export type RangeEventKind = "out_of_range" | "back_in_range";
+export type RangeEventKind =
+  | "out_of_range"
+  | "back_in_range"
+  | "status_change"
+  | "comment_update";
+
+export type StatusEventInput = {
+  id: number;
+  machineId: string;
+  machineName: string;
+  parameterId: string;
+  parameterLabel: string;
+  value: number;
+  stateLabel: string;
+  color: string;
+  comment: string;
+  kind: "status_change" | "comment_update";
+  createdAt: string;
+};
 
 export type RangeEvent = {
   timestamp: string;
@@ -24,6 +42,8 @@ export type RangeEvent = {
   rangeMax: number | null;
   /** Status-state label at the sample, when role is status. */
   stateLabel: string | null;
+  /** Operator comment from manual status / comment events. */
+  comment: string | null;
 };
 
 export type RangeEventSeriesInput = {
@@ -42,7 +62,8 @@ export type RangeEventSeriesInput = {
 
 /**
  * Metric (linear chart): outside [rangeMin, rangeMax].
- * Status (strip): outside the nominal state (lowest state value, e.g. „работи“).
+ * Status samples are not edge-detected here — operators set status manually
+ * and persist events with comments via the табло API.
  */
 export function isOutOfRange(
   value: number,
@@ -56,12 +77,7 @@ export function isOutOfRange(
   },
 ): boolean | null {
   const role = resolveParameterRole(input.label, input.parameterId, input.role);
-  if (role === "status") {
-    const states = input.states ?? [];
-    if (states.length === 0) return null;
-    const nominal = Math.min(...states.map((state) => state.value));
-    return value !== nominal;
-  }
+  if (role === "status") return null;
   if (!chartsOnLinear(role)) return null;
   if (
     typeof input.rangeMin !== "number" ||
@@ -112,6 +128,7 @@ function pushEvent(
     rangeMin: item.rangeMin,
     rangeMax: item.rangeMax,
     stateLabel: state?.label ?? null,
+    comment: null,
   });
 }
 
@@ -123,7 +140,7 @@ export function buildRangeEvents(
 
   for (const item of series) {
     const role = resolveParameterRole(item.label, item.parameterId, item.role);
-    if (role !== "status" && !chartsOnLinear(role)) continue;
+    if (!chartsOnLinear(role)) continue;
 
     const paramColor = colorForParameter(item.parameterId, orderedIds, item.color);
     const samples = [...item.points]
@@ -174,6 +191,9 @@ export function buildRangeEvents(
 
 /** Bold-line title after the machine name (mockup: „Машина – заглавие“). */
 export function rangeEventTitle(event: RangeEvent): string {
+  if (event.kind === "status_change" || event.kind === "comment_update") {
+    return event.stateLabel ?? event.parameterLabel;
+  }
   if (event.role === "status") {
     if (event.kind === "back_in_range") return event.stateLabel ?? "В норма";
     return event.stateLabel ?? event.parameterLabel;
@@ -184,6 +204,11 @@ export function rangeEventTitle(event: RangeEvent): string {
 
 /** Subtext under the title (value + normal range hint). */
 export function rangeEventDetail(event: RangeEvent, formatValue: (n: number) => string): string {
+  if (event.kind === "status_change" || event.kind === "comment_update") {
+    const comment = event.comment?.trim();
+    if (comment) return comment;
+    return event.kind === "comment_update" ? "Коментар изчистен" : "Ръчен статус";
+  }
   if (event.role === "status") {
     if (event.kind === "back_in_range") return "Номинален статус";
     return `Стойност ${formatValue(event.value)}`;
@@ -200,7 +225,7 @@ export function rangeEventDetail(event: RangeEvent, formatValue: (n: number) => 
   return valueText;
 }
 
-/** Flatten dashboard machines into per-machine metric + status series for event detection. */
+/** Flatten dashboard machines into per-machine metric series for OOR event detection. */
 export function rangeEventSeriesFromMachines(
   machines: Array<{
     id: string;
@@ -222,7 +247,7 @@ export function rangeEventSeriesFromMachines(
   for (const machine of machines) {
     for (const series of machine.series) {
       const role = resolveParameterRole(series.label, series.parameterId, series.role);
-      if (role !== "status" && !chartsOnLinear(role)) continue;
+      if (!chartsOnLinear(role)) continue;
       rows.push({
         machineId: machine.id,
         machineName: machine.name,
@@ -239,4 +264,40 @@ export function rangeEventSeriesFromMachines(
     }
   }
   return rows;
+}
+
+/** Map persisted табло status/comment events into the shared event list shape. */
+export function statusEventsAsRangeEvents(events: StatusEventInput[]): RangeEvent[] {
+  return events.map((event) => {
+    const t = Date.parse(event.createdAt);
+    return {
+      timestamp: event.createdAt,
+      t: Number.isFinite(t) ? t : 0,
+      machineId: event.machineId,
+      machineName: event.machineName,
+      parameterId: event.parameterId,
+      parameterLabel: event.parameterLabel,
+      unit: "",
+      color: event.color,
+      value: event.value,
+      kind: event.kind,
+      role: "status" as const,
+      rangeMin: null,
+      rangeMax: null,
+      stateLabel: event.stateLabel,
+      comment: event.comment,
+    };
+  });
+}
+
+export function mergeDashboardEvents(
+  metricEvents: RangeEvent[],
+  statusEvents: StatusEventInput[],
+): RangeEvent[] {
+  return [...metricEvents, ...statusEventsAsRangeEvents(statusEvents)].sort(
+    (a, b) =>
+      b.t - a.t ||
+      a.machineName.localeCompare(b.machineName, "bg") ||
+      a.parameterLabel.localeCompare(b.parameterLabel, "bg"),
+  );
 }

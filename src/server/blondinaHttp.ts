@@ -125,6 +125,35 @@ export async function handleBlondinaRequest(
       send(res, 200, { deleted: await db.clearMeasurements(machineId) });
       return true;
     }
+    if (req.method === "PUT" && url.pathname === "/api/cps/machine-status") {
+      const body = (await readJson(req)) as {
+        machineId?: unknown;
+        value?: unknown;
+        comment?: unknown;
+      };
+      send(
+        res,
+        200,
+        await db.setMachineStatus({
+          machineId: String(body.machineId ?? ""),
+          value: Number(body.value),
+          comment: body.comment === undefined ? undefined : body.comment == null ? "" : String(body.comment),
+        }),
+      );
+      return true;
+    }
+    if (req.method === "PUT" && url.pathname === "/api/cps/machine-status/comment") {
+      const body = (await readJson(req)) as { machineId?: unknown; comment?: unknown };
+      send(
+        res,
+        200,
+        await db.setMachineStatusComment({
+          machineId: String(body.machineId ?? ""),
+          comment: body.comment == null ? "" : String(body.comment),
+        }),
+      );
+      return true;
+    }
     send(res, 404, { error: "Няма такъв адрес." });
     return true;
   } catch (error) {
