@@ -200,39 +200,12 @@ describe("MachineTrend status modal", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("closes the modal after a successful comment save", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({}),
-      }),
-    );
-
-    render(
-      <MachineTrend
-        machine={machineWithStatus()}
-        orderedIds={["speed", "machine_status"]}
-        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
-    fireEvent.click(screen.getByRole("button", { name: "Запази коментар" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  it("keeps status select as draft until Save persists status+comment and closes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
     });
-  });
-
-  it("closes the modal after a successful status change", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({}),
-      }),
-    );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <MachineTrend
@@ -244,9 +217,49 @@ describe("MachineTrend status modal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Статус" }));
     fireEvent.change(screen.getByLabelText("Статус за Струг 1"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("Коментар за Струг 1"), {
+      target: { value: "готово след 10 мин" },
+    });
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Запази коментар" }));
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/cps/machine-status",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          machineId: "LATHE_01",
+          value: 0,
+          comment: "готово след 10 мин",
+        }),
+      }),
+    );
+  });
+
+  it("does not persist when dismissing with Esc after a draft status change", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MachineTrend
+        machine={machineWithStatus()}
+        orderedIds={["speed", "machine_status"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.change(screen.getByLabelText("Статус за Струг 1"), { target: { value: "0" } });
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -129,16 +129,36 @@ export function MachineTrend({
     setCommentDraft(machine.manualStatus?.comment ?? "");
   }, [machine.id, machine.manualStatus?.value, machine.manualStatus?.comment, machine.manualStatus?.updatedAt]);
 
+  function resetStatusDraft(): void {
+    setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
+    setCommentDraft(machine.manualStatus?.comment ?? "");
+    setStatusError(null);
+  }
+
+  function dismissStatusModal(): void {
+    setStatusModalOpen(false);
+    resetStatusDraft();
+  }
+
   useEffect(() => {
     if (!statusModalOpen) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setStatusModalOpen(false);
+      if (event.key !== "Escape") return;
+      setStatusModalOpen(false);
+      setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
+      setCommentDraft(machine.manualStatus?.comment ?? "");
+      setStatusError(null);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [statusModalOpen]);
+  }, [statusModalOpen, machine.manualStatus]);
 
-  async function saveStatus(nextValue: number): Promise<void> {
+  /** Persist draft status + comment together; select alone is draft-only. */
+  async function saveStatusAndComment(): Promise<void> {
+    if (statusValue === "") {
+      setStatusError("Първо изберете статус.");
+      return;
+    }
     setStatusBusy(true);
     setStatusError(null);
     try {
@@ -147,7 +167,7 @@ export function MachineTrend({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           machineId: machine.id,
-          value: nextValue,
+          value: Number(statusValue),
           comment: commentDraft,
         }),
       });
@@ -157,33 +177,6 @@ export function MachineTrend({
       setStatusModalOpen(false);
     } catch (reason) {
       setStatusError(reason instanceof Error ? reason.message : "Статусът не се записа.");
-    } finally {
-      setStatusBusy(false);
-    }
-  }
-
-  async function saveComment(): Promise<void> {
-    if (machine.manualStatus == null && statusValue === "") {
-      setStatusError("Първо изберете статус.");
-      return;
-    }
-    setStatusBusy(true);
-    setStatusError(null);
-    try {
-      const response = await fetch("/api/cps/machine-status/comment", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          machineId: machine.id,
-          comment: commentDraft,
-        }),
-      });
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Коментарът не се записа.");
-      onStatusChanged?.();
-      setStatusModalOpen(false);
-    } catch (reason) {
-      setStatusError(reason instanceof Error ? reason.message : "Коментарът не се записа.");
     } finally {
       setStatusBusy(false);
     }
@@ -421,7 +414,7 @@ export function MachineTrend({
             type="button"
             className="trend-status-open"
             onClick={() => {
-              setStatusError(null);
+              resetStatusDraft();
               setStatusModalOpen(true);
             }}
           >
@@ -434,7 +427,7 @@ export function MachineTrend({
             <div
               className="trend-status-modal-backdrop"
               role="presentation"
-              onClick={() => setStatusModalOpen(false)}
+              onClick={dismissStatusModal}
             >
               <div
                 className="trend-status-modal"
@@ -449,7 +442,7 @@ export function MachineTrend({
                     type="button"
                     className="trend-status-modal-close"
                     aria-label="Затвори"
-                    onClick={() => setStatusModalOpen(false)}
+                    onClick={dismissStatusModal}
                   >
                     ×
                   </button>
@@ -461,12 +454,7 @@ export function MachineTrend({
                       value={statusValue}
                       disabled={statusBusy}
                       aria-label={`Статус за ${machine.name}`}
-                      onChange={(event) => {
-                        const next = event.target.value;
-                        setStatusValue(next);
-                        if (next === "") return;
-                        void saveStatus(Number(next));
-                      }}
+                      onChange={(event) => setStatusValue(event.target.value)}
                     >
                       <option value="">Избери…</option>
                       {statusSeries.states.map((state) => (
@@ -490,8 +478,8 @@ export function MachineTrend({
                   <button
                     type="button"
                     className="trend-status-save"
-                    disabled={statusBusy || (machine.manualStatus == null && statusValue === "")}
-                    onClick={() => void saveComment()}
+                    disabled={statusBusy || statusValue === ""}
+                    onClick={() => void saveStatusAndComment()}
                   >
                     Запази коментар
                   </button>
