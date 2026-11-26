@@ -75,4 +75,43 @@ describe("status timeline", () => {
     ]);
     expect(latest).toEqual({ label: "авария", color: "#e53935", value: 1 });
   });
+
+  it("lets current manual status win over later series samples on the trailing segment", () => {
+    const tMin = Date.parse("2026-11-26T12:00:00.000Z");
+    const tMax = Date.parse("2026-11-26T13:00:00.000Z");
+    const strip = buildStatusStrip(
+      "status",
+      "Статус",
+      states,
+      [
+        { timestamp: "2026-11-26T12:10:00.000Z", value: 0 },
+        { timestamp: "2026-11-26T12:50:00.000Z", value: 1 },
+      ],
+      tMin,
+      tMax,
+      { value: 0, updatedAt: "2026-11-26T11:00:00.000Z" },
+    );
+    expect(strip?.segments.map((segment) => segment.label)).toEqual(["работи"]);
+    expect(strip?.segments.at(-1)?.color).toBe("#3ddc97");
+  });
+
+  it("keeps history before the current event and ends on current color", () => {
+    const tMin = Date.parse("2026-11-26T12:00:00.000Z");
+    const tMax = Date.parse("2026-11-26T13:00:00.000Z");
+    const strip = buildStatusStrip(
+      "status",
+      "Статус",
+      states,
+      [
+        { timestamp: "2026-11-26T12:10:00.000Z", value: 1 },
+        { timestamp: "2026-11-26T12:40:00.000Z", value: 1 },
+        { timestamp: "2026-11-26T12:50:00.000Z", value: 2 },
+      ],
+      tMin,
+      tMax,
+      { value: 0, updatedAt: "2026-11-26T12:30:00.000Z" },
+    );
+    expect(strip?.segments.map((segment) => segment.label)).toEqual(["авария", "работи"]);
+    expect(strip?.segments.at(-1)?.color).toBe("#3ddc97");
+  });
 });

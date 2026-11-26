@@ -97,18 +97,26 @@ export function MachineTrend({
     () =>
       machine.series
         .filter((series) => series.role === "status")
-        .map((series) =>
-          buildStatusStrip(
+        .map((series) => {
+          const current =
+            machine.manualStatus && machine.manualStatus.parameterId === series.parameterId
+              ? {
+                  value: machine.manualStatus.value,
+                  updatedAt: machine.manualStatus.updatedAt,
+                }
+              : null;
+          return buildStatusStrip(
             series.parameterId,
             series.label,
             series.states,
             series.points,
             timeDomain.tMin,
             timeDomain.tMax,
-          ),
-        )
+            current,
+          );
+        })
         .filter((strip): strip is NonNullable<typeof strip> => strip != null),
-    [machine.series, timeDomain],
+    [machine.series, machine.manualStatus, timeDomain],
   );
   const latestStatus = useMemo(() => latestStatusOf(machine.series), [machine.series]);
   const ringFill = machine.manualStatus?.color ?? latestStatus?.color ?? RING_FALLBACK_COLOR;

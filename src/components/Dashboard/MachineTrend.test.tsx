@@ -195,6 +195,44 @@ describe("MachineTrend status modal", () => {
     expect(lastSeg?.getAttribute("fill")?.toLowerCase()).toBe("#e53935");
   });
 
+  it("makes the strip trailing segment follow manualStatus even when series last differs", () => {
+    const machine: DashboardMachine = {
+      ...machineWithStatus(),
+      manualStatus: {
+        parameterId: "machine_status",
+        value: 0,
+        label: "работи",
+        color: "#3ddc97",
+        comment: "",
+        updatedAt: t0,
+      },
+      series: machineWithStatus().series.map((series) =>
+        series.parameterId === "machine_status"
+          ? {
+              ...series,
+              points: [
+                { timestamp: t0, value: 0 },
+                { timestamp: t2, value: 1 },
+              ],
+            }
+          : series,
+      ),
+    };
+    const { container } = render(
+      <MachineTrend
+        machine={machine}
+        orderedIds={["speed", "machine_status"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Статус" }).style.getPropertyValue("--status-fill")).toBe(
+      "#3ddc97",
+    );
+    const lastSeg = [...container.querySelectorAll(".trend-status-seg")].at(-1);
+    expect(lastSeg?.getAttribute("fill")?.toLowerCase()).toBe("#3ddc97");
+  });
+
   it("closes the status modal with the close control, backdrop, and Escape", () => {
     render(
       <MachineTrend
