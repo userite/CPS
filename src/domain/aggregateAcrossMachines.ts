@@ -1,4 +1,8 @@
 import type { AggregateMethod } from "./aggregateMethod";
+import {
+  evaluateFormulaSeries,
+  type FormulaSeriesLookup,
+} from "./formulaEval";
 import type { TrendSample, TrendSeriesInput } from "./machineTrend";
 import { resolveParameterRole } from "./parameterRole";
 
@@ -24,6 +28,10 @@ export type AggregateParamInput = {
    * after each machine's latest plan (same cut as the progress ring).
    */
   planByMachine?: MachineSeriesSlice[];
+  /** For role=formula: expression text. */
+  formula?: string | null;
+  /** Lookup used when evaluating {@link formula}. */
+  formulaLookup?: FormulaSeriesLookup | null;
 };
 
 const DEFAULT_BUCKET_SECONDS = 60;
@@ -187,11 +195,37 @@ export function holdPlanToWindowEnd(points: TrendSample[], tMax: number): TrendS
  * - last: the finite sample with the latest timestamp among all machines in the bucket
  * - count: number of machines that contributed a finite sample in the bucket
  */
+function aggregateFormulaSeries(
+  input: AggregateParamInput,
+  timeDomain: { tMin: number; tMax: number },
+): TrendSeriesInput {
+  const formula = (input.formula ?? "").trim();
+  const lookup = input.formulaLookup;
+  let points: TrendSample[] = [];
+  if (formula && lookup) {
+    const evaluated = evaluateFormulaSeries(formula, lookup, timeDomain);
+    if (evaluated.ok) points = evaluated.points;
+  }
+  return {
+    parameterId: input.parameterId,
+    label: input.label,
+    unit: input.unit,
+    rangeMin: input.rangeMin,
+    rangeMax: input.rangeMax,
+    color: input.color,
+    role: input.role,
+    points,
+  };
+}
+
 export function aggregateParameterSeries(
   input: AggregateParamInput,
   timeDomain: { tMin: number; tMax: number },
 ): TrendSeriesInput {
   const role = resolveParameterRole(input.label, input.parameterId, input.role);
+  if (role === "formula") {
+    return aggregateFormulaSeries(input, timeDomain);
+  }
   if (role === "report") {
     return aggregateReportSeries(
       { ...input, aggregateMethod: "sum" },

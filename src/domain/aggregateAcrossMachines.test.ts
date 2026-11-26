@@ -136,6 +136,50 @@ describe("aggregateAcrossMachines", () => {
     expect(series.points[0]?.value).toBe(5);
   });
 
+  it("evaluates formula role with sum_since_last_plan / sum(last(plan))", () => {
+    const plan = [
+      { machineId: "A", points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 100 }] },
+      { machineId: "B", points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 50 }] },
+    ];
+    const report = [
+      {
+        machineId: "A",
+        points: [
+          { timestamp: "2026-11-23T10:06:00.000Z", value: 10 },
+          { timestamp: "2026-11-23T10:07:00.000Z", value: 5 },
+        ],
+      },
+      {
+        machineId: "B",
+        points: [{ timestamp: "2026-11-23T10:06:30.000Z", value: 15 }],
+      },
+    ];
+    const byKey = new Map<string, typeof plan>([
+      ["plan", plan],
+      ["report", report],
+    ]);
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "report_vs_plan",
+        label: "Отчет спрямо план",
+        unit: "",
+        rangeMin: 0,
+        rangeMax: 1,
+        role: "formula",
+        aggregateMethod: "sum",
+        formula: "sum_since_last_plan(report) / sum(last(plan))",
+        formulaLookup: {
+          sampleIntervalSeconds: 60,
+          resolve: (ref) => byKey.get(ref.toLowerCase()) ?? null,
+        },
+        machines: [],
+      },
+      domain,
+    );
+    expect(series.points.length).toBeGreaterThan(0);
+    expect(series.points.at(-1)?.value).toBeCloseTo(30 / 150, 6);
+  });
+
   it("picks the latest sample across machines for last", () => {
     const series = aggregateParameterSeries(
       {

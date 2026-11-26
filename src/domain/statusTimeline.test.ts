@@ -41,13 +41,15 @@ describe("status timeline", () => {
     ]);
   });
 
-  it("keeps plan/report/status off the linear chart", () => {
+  it("keeps plan/report/status/formula off the linear chart", () => {
     expect(chartsOnLinear("metric")).toBe(true);
     expect(chartsOnLinear("plan")).toBe(false);
     expect(chartsOnLinear("report")).toBe(false);
     expect(chartsOnLinear("status")).toBe(false);
+    expect(chartsOnLinear("formula")).toBe(false);
     expect(resolveParameterRole("Състояние", "Condition", "status")).toBe("status");
     expect(resolveParameterRole("ПЛАН", "plan", "metric")).toBe("plan");
+    expect(resolveParameterRole("Отчет/план", "report_vs_plan", "formula")).toBe("formula");
   });
 
   it("picks the latest-by-time status label and color", () => {

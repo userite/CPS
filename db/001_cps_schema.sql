@@ -28,12 +28,14 @@ CREATE TABLE IF NOT EXISTS cps_parameter (
   sample_interval_seconds  INTEGER,
   color                    TEXT,
   role                     TEXT NOT NULL DEFAULT 'metric'
-    CHECK (role IN ('metric', 'plan', 'report', 'status')),
+    CHECK (role IN ('metric', 'plan', 'report', 'status', 'formula')),
   aggregate_method         TEXT
     CHECK (
       aggregate_method IS NULL OR
       aggregate_method IN ('sum', 'avg', 'last', 'min', 'max', 'count')
     ),
+  -- Expression for role=formula (aggregate chart). See domain/formulaEval.ts.
+  formula                  TEXT,
   CHECK (
     sample_interval_seconds IS NULL OR sample_interval_seconds > 0
   ),
