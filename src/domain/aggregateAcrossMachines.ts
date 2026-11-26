@@ -1,6 +1,7 @@
 import type { AggregateMethod } from "./aggregateMethod";
 import {
   evaluateFormulaSeries,
+  sumSinceLastPlanSeries,
   type FormulaSeriesLookup,
 } from "./formulaEval";
 import type { TrendSample, TrendSeriesInput } from "./machineTrend";
@@ -110,48 +111,39 @@ export function aggregateDisplayRange(
 }
 
 /**
- * Report aggregate: sum increments after each machine's latest plan, then
- * accumulate over time (same post-last-plan cut as the progress ring).
- * Y 100% = sum of those latest plan targets.
+ * Report aggregate: sawtooth sum of increments since each machine's latest
+ * plan *as of that time* (resets when a new plan sample arrives). Endpoint
+ * matches the progress ring; earlier segments remain visible so a live plan
+ * heartbeat near tMax does not empty the series. Y 100% = sum of latest plans.
+ * Last value is held to tMax like plan.
  */
 function aggregateReportSeries(
   input: AggregateParamInput,
   timeDomain: { tMin: number; tMax: number },
 ): TrendSeriesInput {
-  const bucketMs = bucketMsFor(input.sampleIntervalSeconds);
-  const { tMin, tMax } = timeDomain;
+  const { tMax } = timeDomain;
   const planById = new Map(
     (input.planByMachine ?? []).map((row) => [row.machineId, row.points] as const),
   );
 
-  /** bucketStart → summed increments in that bucket (all machines) */
-  const bucketIncrements = new Map<number, number>();
   let planTotal = 0;
   let machinesWithPlan = 0;
-
   for (const machine of input.machines) {
     const lastPlan = lastPlanOf(planById.get(machine.machineId));
     if (!lastPlan || lastPlan.value <= 0) continue;
     machinesWithPlan += 1;
     planTotal += lastPlan.value;
-
-    for (const sample of finiteSamples(machine.points)) {
-      if (sample.t <= lastPlan.t) continue;
-      if (sample.t < tMin || sample.t > tMax) continue;
-      const start = bucketStart(sample.t, bucketMs, tMin);
-      bucketIncrements.set(start, (bucketIncrements.get(start) ?? 0) + sample.value);
-    }
   }
 
-  const starts = [...bucketIncrements.keys()].sort((a, b) => a - b);
-  let running = 0;
-  const points: TrendSample[] = starts.map((start) => {
-    running += bucketIncrements.get(start) ?? 0;
-    return {
-      timestamp: new Date(start + bucketMs / 2).toISOString(),
-      value: running,
-    };
-  });
+  const points = holdPlanToWindowEnd(
+    sumSinceLastPlanSeries(
+      input.machines,
+      input.planByMachine ?? [],
+      timeDomain,
+      input.sampleIntervalSeconds,
+    ),
+    tMax,
+  );
 
   const displayRange = aggregateDisplayRange("sum", input.rangeMin, input.rangeMax, machinesWithPlan, {
     reportPlanTotal: planTotal > 0 ? planTotal : null,
@@ -204,7 +196,7 @@ function aggregateFormulaSeries(
   let points: TrendSample[] = [];
   if (formula && lookup) {
     const evaluated = evaluateFormulaSeries(formula, lookup, timeDomain);
-    if (evaluated.ok) points = evaluated.points;
+    if (evaluated.ok) points = holdPlanToWindowEnd(evaluated.points, timeDomain.tMax);
   }
   return {
     parameterId: input.parameterId,

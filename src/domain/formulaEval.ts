@@ -269,10 +269,14 @@ function aggregateScalar(
 }
 
 /**
- * Cumulative sum of report increments after each machine's latest plan,
- * bucketed across the window (same cut as the aggregate report series).
+ * Sum of report samples since each machine's latest plan *as of that time*.
+ *
+ * Walks the window as a sawtooth: when a new plan sample arrives the running
+ * total resets, then grows with later reports. Endpoint matches the progress
+ * ring (only reports after the overall last plan). Earlier segments stay on
+ * the chart so a live plan heartbeat at tMax does not wipe the whole series.
  */
-function sumSinceLastPlanSeries(
+export function sumSinceLastPlanSeries(
   reportSlices: FormulaMachineSlice[],
   planSlices: FormulaMachineSlice[],
   timeDomain: { tMin: number; tMax: number },
@@ -281,28 +285,58 @@ function sumSinceLastPlanSeries(
   const planById = new Map(planSlices.map((row) => [row.machineId, row.points] as const));
   const bucketMs = bucketMsFor(sampleIntervalSeconds);
   const { tMin, tMax } = timeDomain;
-  const bucketIncrements = new Map<number, number>();
+
+  type Update = { t: number; machineId: string; running: number };
+  const updates: Update[] = [];
 
   for (const machine of reportSlices) {
-    const lastPlan = lastOf(planById.get(machine.machineId) ?? []);
-    if (!lastPlan || lastPlan.value <= 0) continue;
-    for (const sample of finiteSamples(machine.points)) {
-      if (sample.t <= lastPlan.t) continue;
-      if (sample.t < tMin || sample.t > tMax) continue;
-      const start = bucketStart(sample.t, bucketMs, tMin);
-      bucketIncrements.set(start, (bucketIncrements.get(start) ?? 0) + sample.value);
+    const plans = finiteSamples(planById.get(machine.machineId) ?? []);
+    const reports = finiteSamples(machine.points);
+    type Ev = { t: number; kind: "plan" | "report"; value: number };
+    const events: Ev[] = [
+      ...plans.map((p) => ({ t: p.t, kind: "plan" as const, value: p.value })),
+      ...reports.map((r) => ({ t: r.t, kind: "report" as const, value: r.value })),
+    ].sort((a, b) => a.t - b.t || (a.kind === "plan" ? -1 : 1));
+
+    let lastPlanT: number | null = null;
+    let running = 0;
+    for (const ev of events) {
+      if (ev.kind === "plan") {
+        if (ev.value > 0) {
+          running = 0;
+          lastPlanT = ev.t;
+          if (ev.t >= tMin && ev.t <= tMax) {
+            updates.push({ t: ev.t, machineId: machine.machineId, running: 0 });
+          }
+        }
+        continue;
+      }
+      if (lastPlanT != null && ev.t > lastPlanT && ev.t >= tMin && ev.t <= tMax) {
+        running += ev.value;
+        updates.push({ t: ev.t, machineId: machine.machineId, running });
+      }
     }
   }
 
-  const starts = [...bucketIncrements.keys()].sort((a, b) => a - b);
-  let running = 0;
-  return starts.map((start) => {
-    running += bucketIncrements.get(start) ?? 0;
-    return {
+  updates.sort((a, b) => a.t - b.t);
+  const current = new Map<string, number>();
+  const bucketLast = new Map<number, { t: number; total: number }>();
+
+  for (const update of updates) {
+    current.set(update.machineId, update.running);
+    let total = 0;
+    for (const value of current.values()) total += value;
+    const start = bucketStart(update.t, bucketMs, tMin);
+    const prev = bucketLast.get(start);
+    if (!prev || update.t >= prev.t) bucketLast.set(start, { t: update.t, total });
+  }
+
+  return [...bucketLast.keys()]
+    .sort((a, b) => a - b)
+    .map((start) => ({
       timestamp: new Date(start + bucketMs / 2).toISOString(),
-      value: running,
-    };
-  });
+      value: bucketLast.get(start)!.total,
+    }));
 }
 
 function evalAst(

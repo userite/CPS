@@ -127,13 +127,57 @@ describe("aggregateAcrossMachines", () => {
       domain,
     );
 
-    // Pre-plan samples (5 and 9) ignored; post-plan 3+4+2 = 9 cumulative.
+    // Pre-plan samples (5 and 9) ignored; post-plan 3+4+2 = 9 at end.
     expect(series.rangeMin).toBe(0);
     expect(series.rangeMax).toBe(150);
     expect(series.points.length).toBeGreaterThan(0);
     expect(series.points.at(-1)?.value).toBe(9);
     // First minute after plan: 3 (A) + 2 (B) in the same 60s bucket.
     expect(series.points[0]?.value).toBe(5);
+    // Hold to window end.
+    expect(Date.parse(series.points.at(-1)!.timestamp)).toBe(domain.tMax);
+  });
+
+  it("keeps earlier report segments when a later plan heartbeat arrives", () => {
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "report",
+        label: "Отчет",
+        unit: "бр",
+        rangeMin: 0,
+        rangeMax: 100,
+        role: "report",
+        aggregateMethod: "sum",
+        sampleIntervalSeconds: 60,
+        machines: [
+          {
+            machineId: "A",
+            points: [
+              { timestamp: "2026-11-23T10:10:00.000Z", value: 10 },
+              { timestamp: "2026-11-23T10:20:00.000Z", value: 7 },
+              { timestamp: "2026-11-23T10:50:00.000Z", value: 3 },
+            ],
+          },
+        ],
+        planByMachine: [
+          {
+            machineId: "A",
+            points: [
+              { timestamp: "2026-11-23T10:05:00.000Z", value: 100 },
+              { timestamp: "2026-11-23T10:40:00.000Z", value: 100 },
+            ],
+          },
+        ],
+      },
+      domain,
+    );
+
+    // After first plan: 10 then 17; reset at second plan; then 3.
+    expect(series.points.length).toBeGreaterThan(2);
+    const values = series.points.map((p) => p.value);
+    expect(values).toContain(10);
+    expect(values).toContain(17);
+    expect(values.at(-1)).toBe(3);
   });
 
   it("evaluates formula role with sum_since_last_plan / sum(last(plan))", () => {

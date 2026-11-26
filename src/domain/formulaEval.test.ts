@@ -83,7 +83,7 @@ describe("formulaEval evaluate", () => {
     expect(result.points[0].value).toBe(150);
   });
 
-  it("evaluates sum_since_last_plan(report) as cumulative series", () => {
+  it("evaluates sum_since_last_plan(report) as sawtooth series", () => {
     const result = evaluateFormulaSeries(
       "sum_since_last_plan(report)",
       lookupFrom({ plan, report }),
@@ -92,8 +92,41 @@ describe("formulaEval evaluate", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const values = result.points.map((p) => p.value);
-    // A: 10+15, B: 20 → cumulative ends at 45
+    // A: 10+15, B: 20 → ends at 45 (single plan each)
     expect(values.at(-1)).toBe(45);
+  });
+
+  it("does not wipe earlier segments when a late plan sample arrives", () => {
+    const latePlan: FormulaMachineSlice[] = [
+      {
+        machineId: "A",
+        points: [
+          { timestamp: "2026-11-23T10:05:00.000Z", value: 100 },
+          { timestamp: "2026-11-23T11:50:00.000Z", value: 100 },
+        ],
+      },
+    ];
+    const lateReport: FormulaMachineSlice[] = [
+      {
+        machineId: "A",
+        points: [
+          { timestamp: "2026-11-23T10:10:00.000Z", value: 10 },
+          { timestamp: "2026-11-23T10:20:00.000Z", value: 15 },
+          { timestamp: "2026-11-23T11:55:00.000Z", value: 4 },
+        ],
+      },
+    ];
+    const result = evaluateFormulaSeries(
+      "sum_since_last_plan(report)",
+      lookupFrom({ plan: latePlan, report: lateReport }),
+      domain,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const values = result.points.map((p) => p.value);
+    expect(values).toContain(10);
+    expect(values).toContain(25);
+    expect(values.at(-1)).toBe(4);
   });
 
   it("evaluates report/plan ratio series", () => {
