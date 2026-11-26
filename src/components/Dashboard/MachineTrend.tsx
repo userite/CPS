@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
@@ -120,11 +121,22 @@ export function MachineTrend({
   const [commentDraft, setCommentDraft] = useState(machine.manualStatus?.comment ?? "");
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const statusModalTitleId = useId();
 
   useEffect(() => {
     setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
     setCommentDraft(machine.manualStatus?.comment ?? "");
   }, [machine.id, machine.manualStatus?.value, machine.manualStatus?.comment, machine.manualStatus?.updatedAt]);
+
+  useEffect(() => {
+    if (!statusModalOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setStatusModalOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [statusModalOpen]);
 
   async function saveStatus(nextValue: number): Promise<void> {
     setStatusBusy(true);
@@ -196,51 +208,6 @@ export function MachineTrend({
         <h2 title={machine.name}>{machine.name}</h2>
         <p title={machine.model ?? undefined}>{machine.model || "\u00a0"}</p>
       </header>
-      {statusSeries ? (
-        <div className="trend-status-edit" aria-label={`Статус на ${machine.name}`}>
-          <label className="trend-status-field">
-            <span>Статус</span>
-            <select
-              value={statusValue}
-              disabled={statusBusy}
-              aria-label={`Статус за ${machine.name}`}
-              onChange={(event) => {
-                const next = event.target.value;
-                setStatusValue(next);
-                if (next === "") return;
-                void saveStatus(Number(next));
-              }}
-            >
-              <option value="">Избери…</option>
-              {statusSeries.states.map((state) => (
-                <option key={state.value} value={String(state.value)}>
-                  {state.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="trend-status-field trend-status-comment">
-            <span>Коментар</span>
-            <textarea
-              value={commentDraft}
-              disabled={statusBusy}
-              rows={2}
-              placeholder="прогнозно време за отстраняване"
-              aria-label={`Коментар за ${machine.name}`}
-              onChange={(event) => setCommentDraft(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="trend-status-save"
-            disabled={statusBusy || (machine.manualStatus == null && statusValue === "")}
-            onClick={() => void saveComment()}
-          >
-            Запази коментар
-          </button>
-          {statusError ? <p className="trend-status-error">{statusError}</p> : null}
-        </div>
-      ) : null}
       {showPlot ? (
         <div className="trend-plot">
         <div className="trend-yaxis" aria-hidden="true">
@@ -447,7 +414,92 @@ export function MachineTrend({
             </li>
           ))}
         </ul>
+        {statusSeries ? (
+          <button
+            type="button"
+            className="trend-status-open"
+            onClick={() => {
+              setStatusError(null);
+              setStatusModalOpen(true);
+            }}
+          >
+            Статус / коментар
+          </button>
+        ) : null}
       </div>
+      {statusModalOpen && statusSeries
+        ? createPortal(
+            <div
+              className="trend-status-modal-backdrop"
+              role="presentation"
+              onClick={() => setStatusModalOpen(false)}
+            >
+              <div
+                className="trend-status-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={statusModalTitleId}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="trend-status-modal-head">
+                  <h3 id={statusModalTitleId}>Статус — {machine.name}</h3>
+                  <button
+                    type="button"
+                    className="trend-status-modal-close"
+                    aria-label="Затвори"
+                    onClick={() => setStatusModalOpen(false)}
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="trend-status-edit" aria-label={`Статус на ${machine.name}`}>
+                  <label className="trend-status-field">
+                    <span>Статус</span>
+                    <select
+                      value={statusValue}
+                      disabled={statusBusy}
+                      aria-label={`Статус за ${machine.name}`}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setStatusValue(next);
+                        if (next === "") return;
+                        void saveStatus(Number(next));
+                      }}
+                    >
+                      <option value="">Избери…</option>
+                      {statusSeries.states.map((state) => (
+                        <option key={state.value} value={String(state.value)}>
+                          {state.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="trend-status-field trend-status-comment">
+                    <span>Коментар</span>
+                    <textarea
+                      value={commentDraft}
+                      disabled={statusBusy}
+                      rows={3}
+                      placeholder="прогнозно време за отстраняване"
+                      aria-label={`Коментар за ${machine.name}`}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="trend-status-save"
+                    disabled={statusBusy || (machine.manualStatus == null && statusValue === "")}
+                    onClick={() => void saveComment()}
+                  >
+                    Запази коментар
+                  </button>
+                  {statusError ? <p className="trend-status-error">{statusError}</p> : null}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </article>
   );
 }
