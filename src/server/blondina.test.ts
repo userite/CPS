@@ -207,4 +207,56 @@ describe("blondina", () => {
     expect(() => db.clearMeasurements("MISSING")).toThrow(BlondinaInputError);
     db.close();
   });
+
+  it("does not auto-generate status samples and records manual status with comment events", () => {
+    const db = openBlondina(":memory:");
+    db.createParameter({
+      id: "machine_status",
+      label: "Състояние",
+      role: "status",
+      states: [
+        { value: 0, label: "работи", color: "#3ddc97" },
+        { value: 1, label: "авария", color: "#e53935" },
+        { value: 2, label: "технологичен престой", color: "#f0b429" },
+      ],
+      machineIds: ["LATHE_01"],
+    });
+    const period = { from: "2026-10-30T10:00:00.000Z", to: "2026-10-30T10:05:00.000Z" };
+    const generated = db.generate(period, () => 0.5);
+    expect(generated.skipped.some((row) => row.parameterId === "machine_status")).toBe(true);
+    expect(db.listMeasurements({ machineId: "LATHE_01", limit: 20 })).toHaveLength(0);
+    expect(db.appendDueSamples(new Date("2026-10-30T10:00:00.000Z"), () => 0.5, 1)).toBe(0);
+
+    const t1 = new Date(Date.now() - 30 * 60_000);
+    const t2 = new Date(Date.now() - 20 * 60_000);
+    const t3 = new Date(Date.now() - 10 * 60_000);
+
+    const set = db.setMachineStatus({ machineId: "LATHE_01", value: 1 }, t1);
+    expect(set.label).toBe("авария");
+    expect(set.comment).toBe("");
+
+    const withComment = db.setMachineStatusComment(
+      { machineId: "LATHE_01", comment: "прогнозно 2 часа" },
+      t2,
+    );
+    expect(withComment.comment).toBe("прогнозно 2 часа");
+    expect(withComment.label).toBe("авария");
+
+    const back = db.setMachineStatus({ machineId: "LATHE_01", value: 0 }, t3);
+    expect(back.label).toBe("работи");
+    expect(back.comment).toBe("прогнозно 2 часа");
+
+    const reading = db.readDashboard(24 * 60 * 60_000);
+    const machine = reading.machines.find((row) => row.id === "LATHE_01");
+    expect(machine?.manualStatus?.label).toBe("работи");
+    expect(machine?.manualStatus?.comment).toBe("прогнозно 2 часа");
+    expect(machine?.series.find((s) => s.parameterId === "machine_status")?.points.length).toBe(2);
+    expect(reading.statusEvents.map((event) => event.kind)).toEqual([
+      "status_change",
+      "comment_update",
+      "status_change",
+    ]);
+    expect(reading.statusEvents.some((event) => event.comment === "прогнозно 2 часа")).toBe(true);
+    db.close();
+  });
 });

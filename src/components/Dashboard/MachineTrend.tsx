@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
@@ -69,10 +69,12 @@ export function MachineTrend({
   machine,
   orderedIds,
   timeDomain,
+  onStatusChanged,
 }: {
   machine: DashboardMachine;
   orderedIds: string[];
   timeDomain: { tMin: number; tMax: number };
+  onStatusChanged?: () => void;
 }) {
   const chartSeries = useMemo(
     () => machine.series.filter((series) => chartsOnLinear(series.role)),
@@ -85,6 +87,10 @@ export function MachineTrend({
   const planProgress = useMemo(
     () => buildPlanProgress(machine.series, orderedIds),
     [machine.series, orderedIds],
+  );
+  const statusSeries = useMemo(
+    () => machine.series.find((series) => series.role === "status" && series.states.length > 0) ?? null,
+    [machine.series],
   );
   const statusStrips = useMemo(
     () =>
@@ -104,9 +110,70 @@ export function MachineTrend({
     [machine.series, timeDomain],
   );
   const latestStatus = useMemo(() => latestStatusOf(machine.series), [machine.series]);
-  const ringFill = latestStatus?.color ?? RING_FALLBACK_COLOR;
+  const ringFill = machine.manualStatus?.color ?? latestStatus?.color ?? RING_FALLBACK_COLOR;
+  const displayStatusLabel = machine.manualStatus?.label ?? latestStatus?.label ?? null;
   const [hover, setHover] = useState<TrendPoint | null>(null);
   const [statusHover, setStatusHover] = useState<string | null>(null);
+  const [statusValue, setStatusValue] = useState<string>(
+    machine.manualStatus != null ? String(machine.manualStatus.value) : "",
+  );
+  const [commentDraft, setCommentDraft] = useState(machine.manualStatus?.comment ?? "");
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
+    setCommentDraft(machine.manualStatus?.comment ?? "");
+  }, [machine.id, machine.manualStatus?.value, machine.manualStatus?.comment, machine.manualStatus?.updatedAt]);
+
+  async function saveStatus(nextValue: number): Promise<void> {
+    setStatusBusy(true);
+    setStatusError(null);
+    try {
+      const response = await fetch("/api/cps/machine-status", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machineId: machine.id,
+          value: nextValue,
+          comment: commentDraft,
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Статусът не се записа.");
+      onStatusChanged?.();
+    } catch (reason) {
+      setStatusError(reason instanceof Error ? reason.message : "Статусът не се записа.");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
+  async function saveComment(): Promise<void> {
+    if (machine.manualStatus == null && statusValue === "") {
+      setStatusError("Първо изберете статус.");
+      return;
+    }
+    setStatusBusy(true);
+    setStatusError(null);
+    try {
+      const response = await fetch("/api/cps/machine-status/comment", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          machineId: machine.id,
+          comment: commentDraft,
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Коментарът не се записа.");
+      onStatusChanged?.();
+    } catch (reason) {
+      setStatusError(reason instanceof Error ? reason.message : "Коментарът не се записа.");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
   const plotted = lines.some((line) => line.plotted);
   const xTicks = useMemo(
     () => chartTimeTicks(timeDomain.tMin, timeDomain.tMax),
@@ -129,6 +196,51 @@ export function MachineTrend({
         <h2 title={machine.name}>{machine.name}</h2>
         <p title={machine.model ?? undefined}>{machine.model || "\u00a0"}</p>
       </header>
+      {statusSeries ? (
+        <div className="trend-status-edit" aria-label={`Статус на ${machine.name}`}>
+          <label className="trend-status-field">
+            <span>Статус</span>
+            <select
+              value={statusValue}
+              disabled={statusBusy}
+              aria-label={`Статус за ${machine.name}`}
+              onChange={(event) => {
+                const next = event.target.value;
+                setStatusValue(next);
+                if (next === "") return;
+                void saveStatus(Number(next));
+              }}
+            >
+              <option value="">Избери…</option>
+              {statusSeries.states.map((state) => (
+                <option key={state.value} value={String(state.value)}>
+                  {state.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="trend-status-field trend-status-comment">
+            <span>Коментар</span>
+            <textarea
+              value={commentDraft}
+              disabled={statusBusy}
+              rows={2}
+              placeholder="прогнозно време за отстраняване"
+              aria-label={`Коментар за ${machine.name}`}
+              onChange={(event) => setCommentDraft(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="trend-status-save"
+            disabled={statusBusy || (machine.manualStatus == null && statusValue === "")}
+            onClick={() => void saveComment()}
+          >
+            Запази коментар
+          </button>
+          {statusError ? <p className="trend-status-error">{statusError}</p> : null}
+        </div>
+      ) : null}
       {showPlot ? (
         <div className="trend-plot">
         <div className="trend-yaxis" aria-hidden="true">
@@ -311,9 +423,9 @@ export function MachineTrend({
       <div className="trend-foot">
         {planProgress ? (
           <div className="trend-ring-block">
-            {latestStatus ? (
-              <p className="trend-ring-status" style={{ color: latestStatus.color }}>
-                {latestStatus.label}
+            {displayStatusLabel ? (
+              <p className="trend-ring-status" style={{ color: ringFill }}>
+                {displayStatusLabel}
               </p>
             ) : null}
             <PlanRing progress={planProgress} fillColor={ringFill} />

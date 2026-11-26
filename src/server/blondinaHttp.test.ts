@@ -118,4 +118,62 @@ describe("blondinaHttp parameters", () => {
     }
     db.close();
   });
+
+  it("sets machine status and later comment via API", async () => {
+    const db = openBlondina(":memory:");
+    db.createParameter({
+      id: "machine_status",
+      label: "Състояние",
+      role: "status",
+      states: [
+        { value: 0, label: "работи", color: "#3ddc97" },
+        { value: 1, label: "авария", color: "#e53935" },
+      ],
+      machineIds: ["LATHE_01"],
+    });
+
+    const statusRes = mockRes();
+    expect(
+      await handleBlondinaRequest(
+        db,
+        mockReq("PUT", "/api/cps/machine-status", {
+          machineId: "LATHE_01",
+          value: 1,
+        }),
+        statusRes,
+      ),
+    ).toBe(true);
+    expect(statusRes.statusCode).toBe(200);
+    expect(JSON.parse(statusRes.body).label).toBe("авария");
+
+    const commentRes = mockRes();
+    expect(
+      await handleBlondinaRequest(
+        db,
+        mockReq("PUT", "/api/cps/machine-status/comment", {
+          machineId: "LATHE_01",
+          comment: "прогнозно 45 мин",
+        }),
+        commentRes,
+      ),
+    ).toBe(true);
+    expect(commentRes.statusCode).toBe(200);
+    expect(JSON.parse(commentRes.body).comment).toBe("прогнозно 45 мин");
+
+    const dash = mockRes();
+    expect(await handleBlondinaRequest(db, mockReq("GET", "/api/cps/dashboard?minutes=60"), dash)).toBe(
+      true,
+    );
+    const reading = JSON.parse(dash.body) as {
+      statusEvents: Array<{ kind: string; comment: string }>;
+      machines: Array<{ id: string; manualStatus: { comment: string; label: string } | null }>;
+    };
+    expect(reading.machines.find((m) => m.id === "LATHE_01")?.manualStatus?.comment).toBe(
+      "прогнозно 45 мин",
+    );
+    expect(reading.statusEvents.some((e) => e.kind === "comment_update" && e.comment === "прогнозно 45 мин")).toBe(
+      true,
+    );
+    db.close();
+  });
 });

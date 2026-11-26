@@ -30,7 +30,7 @@ describe("isOutOfRange", () => {
     expect(isOutOfRange(101, metric)).toBe(true);
   });
 
-  it("treats non-nominal status states as out of range", () => {
+  it("does not edge-detect status samples (manual events carry comments)", () => {
     const status = {
       role: "status",
       label: "Статус",
@@ -39,9 +39,8 @@ describe("isOutOfRange", () => {
       rangeMax: 2,
       states: DEFAULT_STATUS_STATES,
     };
-    expect(isOutOfRange(0, status)).toBe(false);
-    expect(isOutOfRange(1, status)).toBe(true);
-    expect(isOutOfRange(2, status)).toBe(true);
+    expect(isOutOfRange(0, status)).toBeNull();
+    expect(isOutOfRange(1, status)).toBeNull();
   });
 });
 
@@ -107,7 +106,7 @@ describe("buildRangeEvents", () => {
     expect(events[1]?.timestamp).toBe(t0);
   });
 
-  it("edge-triggers status leave/return against the nominal state only", () => {
+  it("skips status-role series (manual status events are separate)", () => {
     const events = buildRangeEvents(
       [
         {
@@ -132,16 +131,7 @@ describe("buildRangeEvents", () => {
       ],
       ["st"],
     );
-    expect(events).toHaveLength(2);
-    expect(events[1]?.kind).toBe("out_of_range");
-    expect(events[1]?.timestamp).toBe(t1);
-    expect(events[1]?.value).toBe(1);
-    expect(events[1]?.stateLabel).toBe("авария");
-    expect(events[1]?.color).toBe("#e53935");
-    expect(events[0]?.kind).toBe("back_in_range");
-    expect(events[0]?.timestamp).toBe(t4);
-    expect(events[0]?.value).toBe(0);
-    expect(events[0]?.stateLabel).toBe("работи");
+    expect(events).toHaveLength(0);
   });
 
   it("skips plan/report roles", () => {
@@ -195,7 +185,7 @@ describe("buildRangeEvents", () => {
     expect(rangeEventDetail(back!, String)).toBe("50 об/мин (в норма)");
   });
 
-  it("flattens machines into metric and status series only", () => {
+  it("flattens machines into metric series only", () => {
     const rows = rangeEventSeriesFromMachines([
       {
         id: "M1",
@@ -232,6 +222,6 @@ describe("buildRangeEvents", () => {
         ],
       },
     ]);
-    expect(rows.map((r) => r.parameterId)).toEqual(["speed", "st"]);
+    expect(rows.map((r) => r.parameterId)).toEqual(["speed"]);
   });
 });

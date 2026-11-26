@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS cps_measurement (
 CREATE INDEX IF NOT EXISTS cps_measurement_machine_time
   ON cps_measurement (machine_id, measured_at DESC);
 
+-- Ръчни статус/коментар събития от таблото (не се генерират от семпли).
+CREATE TABLE IF NOT EXISTS cps_status_event (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  machine_id    TEXT NOT NULL REFERENCES cps_machine (id) ON DELETE CASCADE,
+  parameter_id  TEXT NOT NULL REFERENCES cps_parameter (id) ON DELETE CASCADE,
+  status_value  REAL NOT NULL,
+  comment       TEXT NOT NULL DEFAULT '',
+  kind          TEXT NOT NULL CHECK (kind IN ('status_change', 'comment_update')),
+  created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS cps_status_event_machine_time
+  ON cps_status_event (machine_id, created_at DESC);
+
 -- Статус и OEE се пазят само ако дойдат готови отвън.
 CREATE TABLE IF NOT EXISTS cps_machine_state (
   machine_id           TEXT PRIMARY KEY REFERENCES cps_machine (id) ON DELETE CASCADE,

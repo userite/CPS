@@ -114,6 +114,20 @@ export function Dashboard() {
     };
   }, [windowHours]);
 
+  async function reloadDashboard(): Promise<void> {
+    try {
+      const minutes = normalizeChartWindowHours(windowHours) * 60;
+      const response = await fetch(`/api/cps/dashboard?minutes=${minutes}`);
+      if (!response.ok) throw new Error("Четенето от базата не мина.");
+      const body = (await response.json()) as DashboardReading;
+      setReading(body);
+      setReadAt(new Date());
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Няма връзка с базата.");
+    }
+  }
+
   const readLabel = readAt
     ? new Intl.DateTimeFormat("bg-BG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(readAt)
     : null;
@@ -189,6 +203,7 @@ export function Dashboard() {
             machine={machine}
             orderedIds={orderedIds}
             timeDomain={timeDomain}
+            onStatusChanged={() => void reloadDashboard()}
           />
         ))}
       </section>
@@ -197,6 +212,7 @@ export function Dashboard() {
           machines={reading.machines}
           orderedIds={orderedIds}
           timeDomain={timeDomain}
+          statusEvents={reading.statusEvents ?? []}
         />
       )}
     </main>
