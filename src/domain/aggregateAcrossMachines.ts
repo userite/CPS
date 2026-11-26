@@ -1,4 +1,9 @@
 import type { AggregateMethod } from "./aggregateMethod";
+import {
+  evaluateFormulaSeries,
+  sumSinceLastPlanSeries,
+  type FormulaSeriesLookup,
+} from "./formulaEval";
 import type { TrendSample, TrendSeriesInput } from "./machineTrend";
 import { resolveParameterRole } from "./parameterRole";
 
@@ -24,6 +29,10 @@ export type AggregateParamInput = {
    * after each machine's latest plan (same cut as the progress ring).
    */
   planByMachine?: MachineSeriesSlice[];
+  /** For role=formula: expression text. */
+  formula?: string | null;
+  /** Lookup used when evaluating {@link formula}. */
+  formulaLookup?: FormulaSeriesLookup | null;
 };
 
 const DEFAULT_BUCKET_SECONDS = 60;
@@ -102,48 +111,39 @@ export function aggregateDisplayRange(
 }
 
 /**
- * Report aggregate: sum increments after each machine's latest plan, then
- * accumulate over time (same post-last-plan cut as the progress ring).
- * Y 100% = sum of those latest plan targets.
+ * Report aggregate: sawtooth sum of increments since each machine's latest
+ * plan *as of that time* (resets when a new plan sample arrives). Endpoint
+ * matches the progress ring; earlier segments remain visible so a live plan
+ * heartbeat near tMax does not empty the series. Y 100% = sum of latest plans.
+ * Last value is held to tMax like plan.
  */
 function aggregateReportSeries(
   input: AggregateParamInput,
   timeDomain: { tMin: number; tMax: number },
 ): TrendSeriesInput {
-  const bucketMs = bucketMsFor(input.sampleIntervalSeconds);
-  const { tMin, tMax } = timeDomain;
+  const { tMax } = timeDomain;
   const planById = new Map(
     (input.planByMachine ?? []).map((row) => [row.machineId, row.points] as const),
   );
 
-  /** bucketStart → summed increments in that bucket (all machines) */
-  const bucketIncrements = new Map<number, number>();
   let planTotal = 0;
   let machinesWithPlan = 0;
-
   for (const machine of input.machines) {
     const lastPlan = lastPlanOf(planById.get(machine.machineId));
     if (!lastPlan || lastPlan.value <= 0) continue;
     machinesWithPlan += 1;
     planTotal += lastPlan.value;
-
-    for (const sample of finiteSamples(machine.points)) {
-      if (sample.t <= lastPlan.t) continue;
-      if (sample.t < tMin || sample.t > tMax) continue;
-      const start = bucketStart(sample.t, bucketMs, tMin);
-      bucketIncrements.set(start, (bucketIncrements.get(start) ?? 0) + sample.value);
-    }
   }
 
-  const starts = [...bucketIncrements.keys()].sort((a, b) => a - b);
-  let running = 0;
-  const points: TrendSample[] = starts.map((start) => {
-    running += bucketIncrements.get(start) ?? 0;
-    return {
-      timestamp: new Date(start + bucketMs / 2).toISOString(),
-      value: running,
-    };
-  });
+  const points = holdPlanToWindowEnd(
+    sumSinceLastPlanSeries(
+      input.machines,
+      input.planByMachine ?? [],
+      timeDomain,
+      input.sampleIntervalSeconds,
+    ),
+    tMax,
+  );
 
   const displayRange = aggregateDisplayRange("sum", input.rangeMin, input.rangeMax, machinesWithPlan, {
     reportPlanTotal: planTotal > 0 ? planTotal : null,
@@ -162,20 +162,62 @@ function aggregateReportSeries(
 }
 
 /**
+ * Plan targets stay in force until replaced. Aggregate buckets only emit points
+ * where samples exist (mid-bucket), so without a hold the line stops short of
+ * the visible X window — especially with long plan intervals (e.g. 1h).
+ */
+export function holdPlanToWindowEnd(points: TrendSample[], tMax: number): TrendSample[] {
+  if (points.length === 0) return points;
+  const last = points[points.length - 1]!;
+  if (typeof last.value !== "number" || !Number.isFinite(last.value)) return points;
+  const lastT = Date.parse(last.timestamp);
+  if (!Number.isFinite(lastT) || lastT >= tMax) return points;
+  return [...points, { timestamp: new Date(tMax).toISOString(), value: last.value }];
+}
+
+/**
  * Per machine: one value per bucket = last finite sample in that bucket.
  * Then combine across machines with the parameter's aggregate method.
  *
  * Report role is special — see {@link aggregateReportSeries}.
+ * Plan role holds the last aggregate value to tMax so the series reaches the
+ * right edge of the shared X window.
  *
  * - sum / avg / min / max: over machine bucket values
  * - last: the finite sample with the latest timestamp among all machines in the bucket
  * - count: number of machines that contributed a finite sample in the bucket
  */
+function aggregateFormulaSeries(
+  input: AggregateParamInput,
+  timeDomain: { tMin: number; tMax: number },
+): TrendSeriesInput {
+  const formula = (input.formula ?? "").trim();
+  const lookup = input.formulaLookup;
+  let points: TrendSample[] = [];
+  if (formula && lookup) {
+    const evaluated = evaluateFormulaSeries(formula, lookup, timeDomain);
+    if (evaluated.ok) points = holdPlanToWindowEnd(evaluated.points, timeDomain.tMax);
+  }
+  return {
+    parameterId: input.parameterId,
+    label: input.label,
+    unit: input.unit,
+    rangeMin: input.rangeMin,
+    rangeMax: input.rangeMax,
+    color: input.color,
+    role: input.role,
+    points,
+  };
+}
+
 export function aggregateParameterSeries(
   input: AggregateParamInput,
   timeDomain: { tMin: number; tMax: number },
 ): TrendSeriesInput {
   const role = resolveParameterRole(input.label, input.parameterId, input.role);
+  if (role === "formula") {
+    return aggregateFormulaSeries(input, timeDomain);
+  }
   if (role === "report") {
     return aggregateReportSeries(
       { ...input, aggregateMethod: "sum" },
@@ -270,7 +312,7 @@ export function aggregateParameterSeries(
     rangeMax: displayRange.rangeMax,
     color: input.color,
     role: input.role,
-    points,
+    points: role === "plan" ? holdPlanToWindowEnd(points, tMax) : points,
   };
 }
 

@@ -29,6 +29,12 @@ export type StatusStrip = {
   states: ParameterStateDef[];
 };
 
+/** Authoritative current status (manual табло event) — wins over later series samples. */
+export type CurrentStatus = {
+  value: number;
+  updatedAt: string;
+};
+
 function stateFor(value: number, states: ParameterStateDef[]): ParameterStateDef | null {
   const exact = states.find((state) => state.value === value);
   if (exact) return exact;
@@ -36,6 +42,44 @@ function stateFor(value: number, states: ParameterStateDef[]): ParameterStateDef
     (a, b) => Math.abs(a.value - value) - Math.abs(b.value - value),
   )[0];
   return nearest ?? null;
+}
+
+/**
+ * Merge an authoritative current status into strip samples.
+ * Drops series points after the current event (stale generated/orphan measurements)
+ * and ensures a sample so the trailing segment matches ring/button.
+ */
+export function pointsWithCurrentStatus(
+  points: StatusSample[],
+  current: CurrentStatus | null | undefined,
+  tMin: number,
+  tMax: number,
+): StatusSample[] {
+  if (!current || !Number.isFinite(current.value)) return points;
+  const currentT = Date.parse(current.updatedAt);
+  // Drop samples at/after the authoritative event — replaced by the injected current point.
+  const kept = points.filter((point) => {
+    if (!point || typeof point.timestamp !== "string") return false;
+    const t = Date.parse(point.timestamp);
+    if (!Number.isFinite(t)) return false;
+    if (Number.isFinite(currentT) && t >= currentT) return false;
+    return true;
+  });
+  let stamp: string;
+  if (!Number.isFinite(currentT)) {
+    stamp = new Date(tMax).toISOString();
+  } else if (currentT < tMin) {
+    stamp = new Date(tMin).toISOString();
+  } else if (currentT > tMax) {
+    stamp = new Date(tMax).toISOString();
+  } else {
+    stamp = current.updatedAt;
+  }
+  const stampT = Date.parse(stamp);
+  const withoutStamp = Number.isFinite(stampT)
+    ? kept.filter((point) => Date.parse(point.timestamp) !== stampT)
+    : kept;
+  return [...withoutStamp, { timestamp: stamp, value: current.value }];
 }
 
 /**
@@ -73,6 +117,8 @@ export function latestStatusOf(
 /**
  * Step segments on the same X domain/padding as the line chart.
  * Each sample holds until the next sample; the last holds to tMax.
+ * When `current` is set (manual status), it wins over later series samples
+ * so the trailing segment matches ringFill / the Status button.
  */
 export function buildStatusStrip(
   parameterId: string,
@@ -81,9 +127,10 @@ export function buildStatusStrip(
   points: StatusSample[],
   tMin: number,
   tMax: number,
+  current?: CurrentStatus | null,
 ): StatusStrip | null {
   if (states.length === 0) return null;
-  const samples = [...points]
+  const samples = pointsWithCurrentStatus(points, current, tMin, tMax)
     .filter((point) => point && typeof point.timestamp === "string")
     .map((point) => {
       const t = Date.parse(point.timestamp);

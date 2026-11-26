@@ -1,4 +1,4 @@
-export type ParameterRole = "metric" | "plan" | "report" | "status";
+export type ParameterRole = "metric" | "plan" | "report" | "status" | "formula";
 
 export type ParameterStateDef = {
   value: number;
@@ -6,7 +6,7 @@ export type ParameterStateDef = {
   color: string;
 };
 
-const ROLE_SET = new Set<ParameterRole>(["metric", "plan", "report", "status"]);
+const ROLE_SET = new Set<ParameterRole>(["metric", "plan", "report", "status", "formula"]);
 
 export function asParameterRole(value: unknown): ParameterRole {
   const role = String(value ?? "metric").trim().toLowerCase();
@@ -40,6 +40,11 @@ export function resolveParameterRole(
 
 export function chartsOnLinear(role: ParameterRole): boolean {
   return role === "metric";
+}
+
+/** Formula params plot only on the aggregate (big) chart. */
+export function chartsOnAggregate(role: ParameterRole): boolean {
+  return role !== "status";
 }
 
 export const DEFAULT_STATUS_STATES: ParameterStateDef[] = [

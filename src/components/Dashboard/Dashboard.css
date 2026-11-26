@@ -364,16 +364,91 @@
   min-height: 1em;
 }
 
+.trend-status-open {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
+  border: 1px solid color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 55%, var(--card-border));
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 18%, var(--card));
+  color: var(--status-fill, var(--accent, #3ddc97));
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.32rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trend-status-open:hover {
+  background: color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 28%, var(--card));
+}
+
+.trend-status-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, #0b1220 55%, transparent);
+}
+
+.trend-status-modal {
+  width: min(28rem, 100%);
+  max-height: min(90vh, 36rem);
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 0.45rem;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 0.75rem 2rem color-mix(in srgb, #000 35%, transparent);
+}
+
+.trend-status-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem 0.35rem;
+}
+
+.trend-status-modal-head h3 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-status-modal-close {
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.trend-status-modal-close:hover {
+  background: color-mix(in srgb, var(--card-border) 35%, transparent);
+}
+
 .trend-status-edit {
   display: grid;
-  grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr) auto;
-  gap: 0.4rem 0.55rem;
-  align-items: end;
-  margin: 0.15rem 0 0.35rem;
-  padding: 0.4rem 0.45rem;
-  border: 1px solid color-mix(in srgb, var(--card-border) 80%, transparent);
-  border-radius: 0.35rem;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  align-items: stretch;
+  margin: 0;
+  padding: 0.45rem 0.85rem 0.9rem;
 }
 
 .trend-status-field {
@@ -401,25 +476,25 @@
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  padding: 0.28rem 0.4rem;
+  padding: 0.35rem 0.45rem;
 }
 
 .trend-status-field textarea {
   resize: vertical;
-  min-height: 2.4rem;
+  min-height: 3.2rem;
   line-height: 1.25;
 }
 
 .trend-status-save {
-  align-self: end;
+  justify-self: start;
   border: 1px solid var(--card-border);
   border-radius: 0.25rem;
   background: color-mix(in srgb, var(--accent, #3ddc97) 22%, var(--card));
   color: var(--text);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.35rem 0.55rem;
+  padding: 0.4rem 0.7rem;
   cursor: pointer;
 }
 
@@ -429,10 +504,9 @@
 }
 
 .trend-status-error {
-  grid-column: 1 / -1;
   margin: 0;
   color: #e53935;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
 }
 
 .trend-foot {
@@ -972,8 +1046,12 @@
 }
 
 @media (max-width: 720px) {
-  .trend-status-edit {
-    grid-template-columns: 1fr;
+  .trend-foot {
+    flex-wrap: wrap;
+  }
+
+  .trend-status-open {
+    margin-left: 0;
   }
 
   .trend-status-save {

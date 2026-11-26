@@ -62,6 +62,18 @@ export function blondinaPlugin(): Plugin {
   return {
     name: "cps-blondina",
     configureServer(server) {
+      // Vite HMR reloads this module but keeps globalThis — drop the cached
+      // connection so create/update pick up new parameter roles (e.g. formula).
+      if (globalStore.__cpsWriter) {
+        clearInterval(globalStore.__cpsWriter);
+        globalStore.__cpsWriter = undefined;
+      }
+      if (globalStore.__cpsBlondina) {
+        void Promise.resolve(globalStore.__cpsBlondina.close());
+        globalStore.__cpsBlondina = undefined;
+      }
+      globalStore.__cpsOpening = undefined;
+
       if (!process.env.VITEST) {
         void database().catch((error: unknown) => {
           console.error(error);

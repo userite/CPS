@@ -6,7 +6,8 @@
 
 .admin-tabs button,
 .admin-card input,
-.admin-card select {
+.admin-card select,
+.admin-card textarea {
   border: 1px solid var(--card-border);
   border-radius: 8px;
   background: var(--control-bg);

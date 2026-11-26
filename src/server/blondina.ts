@@ -12,6 +12,7 @@ import {
   resolveAggregateMethod,
   type AggregateMethod,
 } from "../domain/aggregateMethod";
+import { isValidFormula, parseFormula } from "../domain/formulaEval";
 import {
   resolveParameterRole,
   type ParameterRole,
@@ -48,6 +49,8 @@ export type ParameterInput = {
   role?: ParameterRole | string | null;
   /** Cross-machine aggregate on the табло panel. Null → inferred default. */
   aggregateMethod?: AggregateMethod | string | null;
+  /** Expression for role=formula (aggregate chart). */
+  formula?: string | null;
   states?: ParameterStateDef[];
   machineIds: string[];
 };
@@ -70,6 +73,7 @@ export type ParameterRow = {
   color: string | null;
   role: ParameterRole;
   aggregateMethod: AggregateMethod;
+  formula: string | null;
   states: ParameterStateDef[];
   machineIds: string[];
 };
@@ -119,6 +123,7 @@ export type DashboardSeries = {
   role: ParameterRole;
   aggregateMethod: AggregateMethod;
   sampleIntervalSeconds: number | null;
+  formula?: string | null;
   states: ParameterStateDef[];
   points: Array<{ timestamp: string; value: number | null }>;
 };
@@ -376,6 +381,78 @@ function ensureAggregateMethodColumn(db: DatabaseSync): void {
   db.exec("ALTER TABLE cps_parameter ADD COLUMN aggregate_method TEXT");
 }
 
+/**
+ * Add formula column and widen role CHECK to include 'formula'.
+ * Existing DBs keep the old CHECK until we rebuild the table.
+ */
+function ensureFormulaSupport(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(cps_parameter)").all();
+  if (!columns.some((column) => column.name === "formula")) {
+    db.exec("ALTER TABLE cps_parameter ADD COLUMN formula TEXT");
+  }
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cps_parameter'")
+    .get() as { sql?: string } | undefined;
+  const createSql = String(table?.sql ?? "");
+  if (createSql.includes("'formula'") || !/CHECK\s*\(\s*role\s+IN/i.test(createSql)) {
+    return;
+  }
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      CREATE TABLE cps_parameter_formula_mig (
+        id                       TEXT PRIMARY KEY,
+        label                    TEXT NOT NULL,
+        unit                     TEXT NOT NULL DEFAULT '',
+        range_min                REAL,
+        range_max                REAL,
+        sample_interval_seconds  INTEGER,
+        color                    TEXT,
+        role                     TEXT NOT NULL DEFAULT 'metric'
+          CHECK (role IN ('metric', 'plan', 'report', 'status', 'formula')),
+        aggregate_method         TEXT
+          CHECK (
+            aggregate_method IS NULL OR
+            aggregate_method IN ('sum', 'avg', 'last', 'min', 'max', 'count')
+          ),
+        formula                  TEXT,
+        CHECK (
+          sample_interval_seconds IS NULL OR sample_interval_seconds > 0
+        ),
+        CHECK (
+          range_min IS NULL OR range_max IS NULL OR range_min <= range_max
+        )
+      );
+      INSERT INTO cps_parameter_formula_mig
+        (id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method, formula)
+      SELECT id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method, formula
+      FROM cps_parameter;
+      DROP TABLE cps_parameter;
+      ALTER TABLE cps_parameter_formula_mig RENAME TO cps_parameter;
+    `);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+export function normalizeFormulaText(value: unknown, role: ParameterRole): string | null {
+  if (role !== "formula") {
+    const text = value == null ? "" : String(value).trim();
+    return text ? text : null;
+  }
+  const formula = value == null ? "" : String(value).trim();
+  if (!formula) throw new BlondinaInputError("Формулата е задължителна за параметър с роля „по формула“.");
+  const parsed = parseFormula(formula);
+  if (!parsed.ok) throw new BlondinaInputError(parsed.error.message);
+  if (!isValidFormula(formula)) throw new BlondinaInputError("Невалидна формула.");
+  return formula;
+}
+
 function ensureStatusEventTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cps_status_event (
@@ -417,7 +494,7 @@ function normalizeAggregateMethodWrite(
   value: unknown,
   role: ParameterRole,
 ): AggregateMethod | null {
-  if (role === "status") return null;
+  if (role === "status" || role === "formula") return null;
   if (value == null || String(value).trim() === "") return null;
   const method = asAggregateMethod(value);
   if (!method) {
@@ -469,11 +546,13 @@ function prepareParameterWrite(input: ParameterInput): {
   sampleIntervalSeconds: number | null;
   color: string | null;
   aggregateMethod: AggregateMethod | null;
+  formula: string | null;
 } {
   const role = parseParameterRole(input.role);
   const parsed = parseStates(input.states, role);
   if (parsed.error) throw new BlondinaInputError(parsed.error);
   const states = parsed.states;
+  const formula = normalizeFormulaText(input.formula, role);
   const range = normalizeRange(
     numberOrNull(input.rangeMin),
     numberOrNull(input.rangeMax),
@@ -491,6 +570,25 @@ function prepareParameterWrite(input: ParameterInput): {
       sampleIntervalSeconds: range.sampleIntervalSeconds,
       color: null,
       aggregateMethod: null,
+      formula: null,
+    };
+  }
+  if (role === "formula") {
+    if (range.rangeMin == null || range.rangeMax == null) {
+      throw new BlondinaInputError(
+        "Формулата трябва да има граници (От/До) за общата графика на таблото.",
+      );
+    }
+    return {
+      role,
+      states: [],
+      rangeMin: range.rangeMin,
+      rangeMax: range.rangeMax,
+      // Frequency unused: formula is computed on the aggregate chart.
+      sampleIntervalSeconds: range.sampleIntervalSeconds,
+      color: normalizeColor(input.color),
+      aggregateMethod: null,
+      formula,
     };
   }
   return {
@@ -501,6 +599,7 @@ function prepareParameterWrite(input: ParameterInput): {
     sampleIntervalSeconds: range.sampleIntervalSeconds,
     color: normalizeColor(input.color),
     aggregateMethod: normalizeAggregateMethodWrite(input.aggregateMethod, role),
+    formula: null,
   };
 }
 
@@ -511,6 +610,7 @@ export function openBlondina(dbPath: string): Blondina {
   ensureColorColumn(db);
   ensureRoleAndStates(db);
   ensureAggregateMethodColumn(db);
+  ensureFormulaSupport(db);
   ensureStatusEventTable(db);
   seed(db);
 
@@ -535,7 +635,7 @@ export function openBlondina(dbPath: string): Blondina {
       .prepare(
         `SELECT id, label, unit, range_min AS rangeMin, range_max AS rangeMax,
                 sample_interval_seconds AS sampleIntervalSeconds, color, role,
-                aggregate_method AS aggregateMethod
+                aggregate_method AS aggregateMethod, formula
          FROM cps_parameter
          ORDER BY label`,
       )
@@ -565,6 +665,7 @@ export function openBlondina(dbPath: string): Blondina {
           unit,
           row.aggregateMethod == null ? null : String(row.aggregateMethod),
         ),
+        formula: row.formula == null ? null : String(row.formula),
         states,
         machineIds: links
           .filter((link) => link.parameterId === id)
@@ -628,8 +729,8 @@ export function openBlondina(dbPath: string): Blondina {
       try {
         db.prepare(
           `INSERT INTO cps_parameter
-             (id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, label, unit, range_min, range_max, sample_interval_seconds, color, role, aggregate_method, formula)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           label,
@@ -640,6 +741,7 @@ export function openBlondina(dbPath: string): Blondina {
           prepared.color,
           prepared.role,
           prepared.aggregateMethod,
+          prepared.formula,
         );
         replaceLinks(db, id, links);
         replaceStates(db, id, prepared.states);
@@ -662,7 +764,7 @@ export function openBlondina(dbPath: string): Blondina {
         db.prepare(
           `UPDATE cps_parameter
              SET label = ?, unit = ?, range_min = ?, range_max = ?, sample_interval_seconds = ?,
-                 color = ?, role = ?, aggregate_method = ?
+                 color = ?, role = ?, aggregate_method = ?, formula = ?
            WHERE id = ?`,
         ).run(
           label,
@@ -673,6 +775,7 @@ export function openBlondina(dbPath: string): Blondina {
           prepared.color,
           prepared.role,
           prepared.aggregateMethod,
+          prepared.formula,
           id,
         );
         replaceLinks(db, id, links);
@@ -725,6 +828,14 @@ export function openBlondina(dbPath: string): Blondina {
             machineId: String(row.machineId),
             parameterId: String(row.parameterId),
             reason: "статусът се задава ръчно от таблото",
+          });
+          continue;
+        }
+        if (role === "formula") {
+          skipped.push({
+            machineId: String(row.machineId),
+            parameterId: String(row.parameterId),
+            reason: "формулата се смята на общата графика",
           });
           continue;
         }
@@ -788,7 +899,8 @@ export function openBlondina(dbPath: string): Blondina {
            JOIN cps_parameter p ON p.id = mp.parameter_id
            WHERE p.sample_interval_seconds IS NOT NULL
              AND p.range_min IS NOT NULL AND p.range_max IS NOT NULL
-             AND IFNULL(p.role, 'metric') != 'status'`,
+             AND IFNULL(p.role, 'metric') != 'status'
+             AND IFNULL(p.role, 'metric') != 'formula'`,
         )
         .all();
       const lastSample = db.prepare(
@@ -806,7 +918,8 @@ export function openBlondina(dbPath: string): Blondina {
       db.exec("BEGIN");
       try {
         for (const row of series) {
-          if (parseParameterRole(row.role) === "status") continue;
+          const role = parseParameterRole(row.role);
+          if (role === "status" || role === "formula") continue;
           const intervalMs = effectiveSampleIntervalMs(Number(row.sampleIntervalSeconds), speedFactor);
           const last = lastSample.get(String(row.machineId), String(row.parameterId));
           const lastMs = last ? Date.parse(String(last.measuredAt)) : Number.NaN;
@@ -1001,7 +1114,8 @@ export function openBlondina(dbPath: string): Blondina {
                   p.unit AS unit, p.range_min AS rangeMin, p.range_max AS rangeMax,
                   p.color AS color, p.role AS role,
                   p.aggregate_method AS aggregateMethod,
-                  p.sample_interval_seconds AS sampleIntervalSeconds
+                  p.sample_interval_seconds AS sampleIntervalSeconds,
+                  p.formula AS formula
            FROM cps_machine_parameter mp
            JOIN cps_parameter p ON p.id = mp.parameter_id
            ORDER BY p.label`,
@@ -1105,6 +1219,7 @@ export function openBlondina(dbPath: string): Blondina {
                   link.sampleIntervalSeconds == null
                     ? null
                     : Number(link.sampleIntervalSeconds),
+                formula: link.formula == null ? null : String(link.formula),
                 states: statesMap.get(parameterId) ?? [],
                 points: samples
                   .filter(

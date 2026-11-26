@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
 import {
@@ -96,18 +97,26 @@ export function MachineTrend({
     () =>
       machine.series
         .filter((series) => series.role === "status")
-        .map((series) =>
-          buildStatusStrip(
+        .map((series) => {
+          const current =
+            machine.manualStatus && machine.manualStatus.parameterId === series.parameterId
+              ? {
+                  value: machine.manualStatus.value,
+                  updatedAt: machine.manualStatus.updatedAt,
+                }
+              : null;
+          return buildStatusStrip(
             series.parameterId,
             series.label,
             series.states,
             series.points,
             timeDomain.tMin,
             timeDomain.tMax,
-          ),
-        )
+            current,
+          );
+        })
         .filter((strip): strip is NonNullable<typeof strip> => strip != null),
-    [machine.series, timeDomain],
+    [machine.series, machine.manualStatus, timeDomain],
   );
   const latestStatus = useMemo(() => latestStatusOf(machine.series), [machine.series]);
   const ringFill = machine.manualStatus?.color ?? latestStatus?.color ?? RING_FALLBACK_COLOR;
@@ -120,13 +129,44 @@ export function MachineTrend({
   const [commentDraft, setCommentDraft] = useState(machine.manualStatus?.comment ?? "");
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const statusModalTitleId = useId();
 
   useEffect(() => {
     setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
     setCommentDraft(machine.manualStatus?.comment ?? "");
   }, [machine.id, machine.manualStatus?.value, machine.manualStatus?.comment, machine.manualStatus?.updatedAt]);
 
-  async function saveStatus(nextValue: number): Promise<void> {
+  function resetStatusDraft(): void {
+    setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
+    setCommentDraft(machine.manualStatus?.comment ?? "");
+    setStatusError(null);
+  }
+
+  function dismissStatusModal(): void {
+    setStatusModalOpen(false);
+    resetStatusDraft();
+  }
+
+  useEffect(() => {
+    if (!statusModalOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setStatusModalOpen(false);
+      setStatusValue(machine.manualStatus != null ? String(machine.manualStatus.value) : "");
+      setCommentDraft(machine.manualStatus?.comment ?? "");
+      setStatusError(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [statusModalOpen, machine.manualStatus]);
+
+  /** Persist draft status + comment together; select alone is draft-only. */
+  async function saveStatusAndComment(): Promise<void> {
+    if (statusValue === "") {
+      setStatusError("Първо изберете статус.");
+      return;
+    }
     setStatusBusy(true);
     setStatusError(null);
     try {
@@ -135,41 +175,16 @@ export function MachineTrend({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           machineId: machine.id,
-          value: nextValue,
+          value: Number(statusValue),
           comment: commentDraft,
         }),
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error || "Статусът не се записа.");
       onStatusChanged?.();
+      setStatusModalOpen(false);
     } catch (reason) {
       setStatusError(reason instanceof Error ? reason.message : "Статусът не се записа.");
-    } finally {
-      setStatusBusy(false);
-    }
-  }
-
-  async function saveComment(): Promise<void> {
-    if (machine.manualStatus == null && statusValue === "") {
-      setStatusError("Първо изберете статус.");
-      return;
-    }
-    setStatusBusy(true);
-    setStatusError(null);
-    try {
-      const response = await fetch("/api/cps/machine-status/comment", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          machineId: machine.id,
-          comment: commentDraft,
-        }),
-      });
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Коментарът не се записа.");
-      onStatusChanged?.();
-    } catch (reason) {
-      setStatusError(reason instanceof Error ? reason.message : "Коментарът не се записа.");
     } finally {
       setStatusBusy(false);
     }
@@ -196,51 +211,6 @@ export function MachineTrend({
         <h2 title={machine.name}>{machine.name}</h2>
         <p title={machine.model ?? undefined}>{machine.model || "\u00a0"}</p>
       </header>
-      {statusSeries ? (
-        <div className="trend-status-edit" aria-label={`Статус на ${machine.name}`}>
-          <label className="trend-status-field">
-            <span>Статус</span>
-            <select
-              value={statusValue}
-              disabled={statusBusy}
-              aria-label={`Статус за ${machine.name}`}
-              onChange={(event) => {
-                const next = event.target.value;
-                setStatusValue(next);
-                if (next === "") return;
-                void saveStatus(Number(next));
-              }}
-            >
-              <option value="">Избери…</option>
-              {statusSeries.states.map((state) => (
-                <option key={state.value} value={String(state.value)}>
-                  {state.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="trend-status-field trend-status-comment">
-            <span>Коментар</span>
-            <textarea
-              value={commentDraft}
-              disabled={statusBusy}
-              rows={2}
-              placeholder="прогнозно време за отстраняване"
-              aria-label={`Коментар за ${machine.name}`}
-              onChange={(event) => setCommentDraft(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="trend-status-save"
-            disabled={statusBusy || (machine.manualStatus == null && statusValue === "")}
-            onClick={() => void saveComment()}
-          >
-            Запази коментар
-          </button>
-          {statusError ? <p className="trend-status-error">{statusError}</p> : null}
-        </div>
-      ) : null}
       {showPlot ? (
         <div className="trend-plot">
         <div className="trend-yaxis" aria-hidden="true">
@@ -447,7 +417,88 @@ export function MachineTrend({
             </li>
           ))}
         </ul>
+        {statusSeries ? (
+          <button
+            type="button"
+            className="trend-status-open"
+            style={{ ["--status-fill" as string]: ringFill }}
+            onClick={() => {
+              resetStatusDraft();
+              setStatusModalOpen(true);
+            }}
+          >
+            Статус
+          </button>
+        ) : null}
       </div>
+      {statusModalOpen && statusSeries
+        ? createPortal(
+            <div
+              className="trend-status-modal-backdrop"
+              role="presentation"
+              onClick={dismissStatusModal}
+            >
+              <div
+                className="trend-status-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={statusModalTitleId}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="trend-status-modal-head">
+                  <h3 id={statusModalTitleId}>Статус — {machine.name}</h3>
+                  <button
+                    type="button"
+                    className="trend-status-modal-close"
+                    aria-label="Затвори"
+                    onClick={dismissStatusModal}
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="trend-status-edit" aria-label={`Статус на ${machine.name}`}>
+                  <label className="trend-status-field">
+                    <span>Статус</span>
+                    <select
+                      value={statusValue}
+                      disabled={statusBusy}
+                      aria-label={`Статус за ${machine.name}`}
+                      onChange={(event) => setStatusValue(event.target.value)}
+                    >
+                      <option value="">Избери…</option>
+                      {statusSeries.states.map((state) => (
+                        <option key={state.value} value={String(state.value)}>
+                          {state.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="trend-status-field trend-status-comment">
+                    <span>Коментар</span>
+                    <textarea
+                      value={commentDraft}
+                      disabled={statusBusy}
+                      rows={3}
+                      placeholder="прогнозно време за отстраняване"
+                      aria-label={`Коментар за ${machine.name}`}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="trend-status-save"
+                    disabled={statusBusy || statusValue === ""}
+                    onClick={() => void saveStatusAndComment()}
+                  >
+                    Запази коментар
+                  </button>
+                  {statusError ? <p className="trend-status-error">{statusError}</p> : null}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </article>
   );
 }

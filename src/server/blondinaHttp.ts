@@ -37,6 +37,7 @@ function asParameter(body: unknown): ParameterInput {
     color: record.color,
     role: record.role,
     aggregateMethod: record.aggregateMethod,
+    formula: record.formula,
     states: Array.isArray(record.states) ? record.states : [],
     machineIds: Array.isArray(record.machineIds) ? record.machineIds.map(String) : [],
   };

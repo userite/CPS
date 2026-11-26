@@ -3,10 +3,12 @@ import { aggregateChartParamsStorageKey } from "../../config/dashboard";
 import {
   buildAggregateSeries,
   type AggregateParamInput,
+  type MachineSeriesSlice,
 } from "../../domain/aggregateAcrossMachines";
 import { AGGREGATE_METHOD_LABELS } from "../../domain/aggregateMethod";
 import { chartTimeTicks } from "../../domain/chartTimeTicks";
 import { formatNumber, formatTime } from "../../domain/format";
+import type { FormulaSeriesLookup } from "../../domain/formulaEval";
 import {
   OUT_OF_RANGE_COLOR,
   TREND_VIEW,
@@ -123,6 +125,38 @@ export function AggregatePanel({
     }
   }, [selectedIds, hydrated]);
 
+  const formulaLookup: FormulaSeriesLookup = useMemo(() => {
+    const byKey = new Map<string, MachineSeriesSlice[]>();
+    const add = (key: string, slice: MachineSeriesSlice) => {
+      const list = byKey.get(key) ?? [];
+      list.push(slice);
+      byKey.set(key, list);
+    };
+    let interval: number | null = null;
+    for (const machine of machines) {
+      for (const series of machine.series) {
+        const role = resolveParameterRole(series.label, series.parameterId, series.role);
+        if (role === "formula" || role === "status") continue;
+        const slice = { machineId: machine.id, points: series.points };
+        add(series.parameterId.toLowerCase(), slice);
+        if (role === "plan" || role === "report") add(role, slice);
+        if (
+          interval == null &&
+          typeof series.sampleIntervalSeconds === "number" &&
+          series.sampleIntervalSeconds > 0
+        ) {
+          interval = series.sampleIntervalSeconds;
+        }
+      }
+    }
+    return {
+      sampleIntervalSeconds: interval,
+      resolve(ref: string) {
+        return byKey.get(ref.toLowerCase()) ?? null;
+      },
+    };
+  }, [machines]);
+
   const aggregateInputs: AggregateParamInput[] = useMemo(() => {
     const selected = new Set(selectedIds);
     return catalog
@@ -152,13 +186,15 @@ export function AggregatePanel({
           rangeMax: item.rangeMax,
           color: item.color,
           role: item.role,
-          aggregateMethod: role === "report" ? "sum" : item.aggregateMethod,
+          aggregateMethod: role === "report" || role === "formula" ? "sum" : item.aggregateMethod,
           sampleIntervalSeconds: item.sampleIntervalSeconds,
           machines: machineSlices,
           planByMachine,
+          formula: item.formula,
+          formulaLookup: role === "formula" ? formulaLookup : null,
         };
       });
-  }, [catalog, machines, selectedIds]);
+  }, [catalog, formulaLookup, machines, selectedIds]);
 
   const aggregateSeries = useMemo(
     () => buildAggregateSeries(aggregateInputs, timeDomain),
@@ -385,9 +421,15 @@ export function AggregatePanel({
               </p>
               <ul className="agg-legend">
                 {lines.map((line) => {
-                  const method =
-                    aggregateInputs.find((item) => item.parameterId === line.parameterId)
-                      ?.aggregateMethod ?? "avg";
+                  const input = aggregateInputs.find(
+                    (item) => item.parameterId === line.parameterId,
+                  );
+                  const role = resolveParameterRole(
+                    line.label,
+                    line.parameterId,
+                    input?.role,
+                  );
+                  const method = input?.aggregateMethod ?? "avg";
                   const valueText = !line.hasRange
                     ? "без граници"
                     : valueAxis
@@ -402,7 +444,7 @@ export function AggregatePanel({
                       <i style={{ background: line.color }} aria-hidden="true" />
                       <span>{line.label}</span>
                       <span className="trend-legend-value">
-                        {AGGREGATE_METHOD_LABELS[method]}
+                        {role === "formula" ? "формула" : AGGREGATE_METHOD_LABELS[method]}
                         {" · "}
                         {valueText}
                         {line.outside ? " · извън" : ""}
@@ -422,7 +464,7 @@ export function AggregatePanel({
             <ul className="agg-param-list">
               {catalog.map((item) => {
                 const role = resolveParameterRole(item.label, item.parameterId, item.role);
-                const method = role === "report" ? "sum" : item.aggregateMethod;
+                const method = role === "report" || role === "formula" ? "sum" : item.aggregateMethod;
                 return (
                   <li key={item.parameterId}>
                     <label className="agg-check">
@@ -436,7 +478,9 @@ export function AggregatePanel({
                         <span className="agg-check-meta">
                           {item.parameterId}
                           {" · "}
-                          {AGGREGATE_METHOD_LABELS[method]}
+                          {role === "formula"
+                            ? "формула"
+                            : AGGREGATE_METHOD_LABELS[method]}
                           {role === "report" ? " · след план" : ""}
                         </span>
                       </span>

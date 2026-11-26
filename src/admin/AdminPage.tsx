@@ -41,6 +41,7 @@ type ParameterDraft = {
   color: string;
   role: ParameterRole;
   aggregateMethod: AggregateMethod;
+  formula: string;
   states: StateDraft[];
   machineIds: string[];
 };
@@ -56,6 +57,7 @@ const emptyParameter: ParameterDraft = {
   color: "",
   role: "metric",
   aggregateMethod: "avg",
+  formula: "",
   states: DEFAULT_STATUS_STATES.map((state) => ({
     value: String(state.value),
     label: state.label,
@@ -69,7 +71,10 @@ const ROLE_LABELS: Record<ParameterRole, string> = {
   plan: "План",
   report: "Отчет / изпълнение",
   status: "Статус (лента)",
+  formula: "По формула (обща графика)",
 };
+
+const EXAMPLE_FORMULA = "sum_since_last_plan(report) / sum(last(plan))";
 
 function localInputValue(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -154,6 +159,7 @@ export function AdminPage() {
       color: parameter.color ?? "",
       role: parameter.role,
       aggregateMethod: parameter.aggregateMethod,
+      formula: parameter.formula ?? "",
       states:
         parameter.states.length > 0
           ? parameter.states.map((state) => ({
@@ -327,7 +333,11 @@ export function AdminPage() {
                     color: parameterDraft.color,
                     role: parameterDraft.role,
                     aggregateMethod:
-                      parameterDraft.role === "status" ? null : parameterDraft.aggregateMethod,
+                      parameterDraft.role === "status" || parameterDraft.role === "formula"
+                        ? null
+                        : parameterDraft.aggregateMethod,
+                    formula:
+                      parameterDraft.role === "formula" ? parameterDraft.formula : null,
                     states:
                       parameterDraft.role === "status"
                         ? parameterDraft.states.map((state) => ({
@@ -383,8 +393,91 @@ export function AdminPage() {
             </label>
             <p className="admin-muted">
               План и отчет захранват кръга на таблото. Статусът е отделна лента от квадратчета и не влиза в линейната графика.
+              „По формула“ се чертае само на долната обща графика.
             </p>
-            {parameterDraft.role !== "status" ? (
+            {parameterDraft.role === "formula" ? (
+              <>
+                <label>
+                  Формула
+                  <textarea
+                    value={parameterDraft.formula}
+                    rows={3}
+                    spellCheck={false}
+                    placeholder={EXAMPLE_FORMULA}
+                    onChange={(event) =>
+                      setParameterDraft({ ...parameterDraft, formula: event.target.value })
+                    }
+                    required
+                  />
+                </label>
+                <p className="admin-muted">
+                  Агрегати: <span className="admin-path">sum</span>,{" "}
+                  <span className="admin-path">avg</span>, <span className="admin-path">last</span>,{" "}
+                  <span className="admin-path">min</span>, <span className="admin-path">max</span>,{" "}
+                  <span className="admin-path">count</span>. Специална:{" "}
+                  <span className="admin-path">sum_since_last_plan(report)</span> (alias{" "}
+                  <span className="admin-path">sum_sled_last_plan</span>). Референции:{" "}
+                  <span className="admin-path">plan</span> / <span className="admin-path">report</span>{" "}
+                  или код на параметър. Пример:{" "}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setParameterDraft({
+                        ...parameterDraft,
+                        formula: EXAMPLE_FORMULA,
+                        rangeMin: parameterDraft.rangeMin || "0",
+                        rangeMax: parameterDraft.rangeMax || "1",
+                        unit: parameterDraft.unit || "",
+                      })
+                    }
+                  >
+                    {EXAMPLE_FORMULA}
+                  </button>
+                </p>
+                <label>
+                  Единица
+                  <input
+                    value={parameterDraft.unit}
+                    onChange={(event) => setParameterDraft({ ...parameterDraft, unit: event.target.value })}
+                  />
+                </label>
+                <div className="admin-pair">
+                  <label>
+                    От
+                    <input
+                      inputMode="decimal"
+                      value={parameterDraft.rangeMin}
+                      onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMin: event.target.value })}
+                      required
+                    />
+                  </label>
+                  <label>
+                    До
+                    <input
+                      inputMode="decimal"
+                      value={parameterDraft.rangeMax}
+                      onChange={(event) => setParameterDraft({ ...parameterDraft, rangeMax: event.target.value })}
+                      required
+                    />
+                  </label>
+                </div>
+                <label>
+                  Цвят
+                  <input
+                    value={parameterDraft.color}
+                    placeholder="#929292"
+                    maxLength={7}
+                    spellCheck={false}
+                    onChange={(event) => setParameterDraft({ ...parameterDraft, color: event.target.value })}
+                  />
+                </label>
+                <p className="admin-muted">
+                  Границите са задължителни за Y на общата графика. Честотата не се ползва — няма семпли.
+                  Маркирайте поне една машина, за да се появи параметърът в каталога на таблото.
+                </p>
+              </>
+            ) : parameterDraft.role !== "status" ? (
               <>
                 <label>
                   Агрегиране през машини
@@ -561,6 +654,11 @@ export function AdminPage() {
                 За статус честотата не се ползва — стойностите се пишат ръчно от таблото.
               </p>
             ) : null}
+            {parameterDraft.role === "formula" ? (
+              <p className="admin-muted">
+                За формула честотата не се ползва — серията се смята от plan/report (или код) на общата графика.
+              </p>
+            ) : null}
             <fieldset>
               <legend>Машини</legend>
               {state?.machines.map((machine) => (
@@ -626,16 +724,20 @@ export function AdminPage() {
                     <td>
                       {parameter.role === "status"
                         ? "—"
-                        : AGGREGATE_METHOD_LABELS[parameter.aggregateMethod]}
+                        : parameter.role === "formula"
+                          ? "формула"
+                          : AGGREGATE_METHOD_LABELS[parameter.aggregateMethod]}
                     </td>
                     <td>
                       {parameter.role === "status"
                         ? parameter.states
                             .map((state) => `${state.value}=${state.label}`)
                             .join(", ") || "няма състояния"
-                        : parameter.rangeMin == null || parameter.rangeMax == null
-                          ? "не е зададен"
-                          : `${parameter.rangeMin} – ${parameter.rangeMax}`}
+                        : parameter.role === "formula"
+                          ? parameter.formula ?? "—"
+                          : parameter.rangeMin == null || parameter.rangeMax == null
+                            ? "не е зададен"
+                            : `${parameter.rangeMin} – ${parameter.rangeMax}`}
                     </td>
                     <td>{parameter.sampleIntervalSeconds == null ? "—" : `${parameter.sampleIntervalSeconds} сек`}</td>
                     <td>{parameter.machineIds.map((id) => machineName.get(id) ?? id).join(", ")}</td>
