@@ -162,10 +162,26 @@ function aggregateReportSeries(
 }
 
 /**
+ * Plan targets stay in force until replaced. Aggregate buckets only emit points
+ * where samples exist (mid-bucket), so without a hold the line stops short of
+ * the visible X window — especially with long plan intervals (e.g. 1h).
+ */
+export function holdPlanToWindowEnd(points: TrendSample[], tMax: number): TrendSample[] {
+  if (points.length === 0) return points;
+  const last = points[points.length - 1]!;
+  if (typeof last.value !== "number" || !Number.isFinite(last.value)) return points;
+  const lastT = Date.parse(last.timestamp);
+  if (!Number.isFinite(lastT) || lastT >= tMax) return points;
+  return [...points, { timestamp: new Date(tMax).toISOString(), value: last.value }];
+}
+
+/**
  * Per machine: one value per bucket = last finite sample in that bucket.
  * Then combine across machines with the parameter's aggregate method.
  *
  * Report role is special — see {@link aggregateReportSeries}.
+ * Plan role holds the last aggregate value to tMax so the series reaches the
+ * right edge of the shared X window.
  *
  * - sum / avg / min / max: over machine bucket values
  * - last: the finite sample with the latest timestamp among all machines in the bucket
@@ -270,7 +286,7 @@ export function aggregateParameterSeries(
     rangeMax: displayRange.rangeMax,
     color: input.color,
     role: input.role,
-    points,
+    points: role === "plan" ? holdPlanToWindowEnd(points, tMax) : points,
   };
 }
 

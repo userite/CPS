@@ -3,6 +3,7 @@ import {
   aggregateDisplayRange,
   aggregateParameterSeries,
   bucketMsFor,
+  holdPlanToWindowEnd,
 } from "./aggregateAcrossMachines";
 
 const domain = {
@@ -159,5 +160,76 @@ describe("aggregateAcrossMachines", () => {
       domain,
     );
     expect(series.points[0].value).toBe(55);
+  });
+
+  it("holds plan aggregate to tMax so the line reaches the window end", () => {
+    const held = holdPlanToWindowEnd(
+      [{ timestamp: "2026-11-23T10:30:00.000Z", value: 400 }],
+      domain.tMax,
+    );
+    expect(held).toHaveLength(2);
+    expect(held[1]).toEqual({
+      timestamp: new Date(domain.tMax).toISOString(),
+      value: 400,
+    });
+    expect(holdPlanToWindowEnd(held, domain.tMax)).toEqual(held);
+
+    // Hourly plan buckets place the last point at mid-bucket; without a hold
+    // the polyline stops well before the shared X domain end (~now).
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "plan",
+        label: "План",
+        unit: "бр",
+        rangeMin: 0,
+        rangeMax: 1000,
+        role: "plan",
+        aggregateMethod: "sum",
+        sampleIntervalSeconds: 3600,
+        machines: [
+          {
+            machineId: "A",
+            points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 100 }],
+          },
+          {
+            machineId: "B",
+            points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 50 }],
+          },
+        ],
+      },
+      domain,
+    );
+    expect(series.points.length).toBeGreaterThanOrEqual(2);
+    expect(series.points.at(-1)).toEqual({
+      timestamp: new Date(domain.tMax).toISOString(),
+      value: 150,
+    });
+    const prior = series.points.at(-2);
+    expect(prior?.value).toBe(150);
+    expect(Date.parse(prior!.timestamp)).toBeLessThan(domain.tMax);
+  });
+
+  it("does not hold non-plan metrics to tMax", () => {
+    const series = aggregateParameterSeries(
+      {
+        parameterId: "parts",
+        label: "Детайли",
+        unit: "бр",
+        rangeMin: 0,
+        rangeMax: 100,
+        role: "metric",
+        aggregateMethod: "sum",
+        sampleIntervalSeconds: 3600,
+        machines: [
+          {
+            machineId: "A",
+            points: [{ timestamp: "2026-11-23T10:05:00.000Z", value: 10 }],
+          },
+        ],
+      },
+      domain,
+    );
+    expect(series.points).toHaveLength(1);
+    expect(Date.parse(series.points[0]!.timestamp)).toBeLessThan(domain.tMax);
   });
 });
