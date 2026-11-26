@@ -368,10 +368,10 @@
   flex: 0 0 auto;
   align-self: center;
   margin-left: auto;
-  border: 1px solid var(--card-border);
+  border: 1px solid color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 55%, var(--card-border));
   border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--accent, #3ddc97) 18%, var(--card));
-  color: var(--text);
+  background: color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 18%, var(--card));
+  color: var(--status-fill, var(--accent, #3ddc97));
   font: inherit;
   font-size: 0.68rem;
   font-weight: 600;
@@ -381,7 +381,7 @@
 }
 
 .trend-status-open:hover {
-  background: color-mix(in srgb, var(--accent, #3ddc97) 28%, var(--card));
+  background: color-mix(in srgb, var(--status-fill, var(--accent, #3ddc97)) 28%, var(--card));
 }
 
 .trend-status-modal-backdrop {

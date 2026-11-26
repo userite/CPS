@@ -165,17 +165,34 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Статус" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Статус: авария" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Статус за Струг 1")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Коментар за Струг 1")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
 
     expect(screen.getByRole("dialog", { name: "Статус — Струг 1" })).toBeInTheDocument();
     expect(screen.getByLabelText("Статус за Струг 1")).toHaveValue("1");
     expect(screen.getByLabelText("Коментар за Струг 1")).toHaveValue("прогнозно 45 мин");
     expect(screen.getByRole("button", { name: "Запази коментар" })).toBeInTheDocument();
+  });
+
+  it("paints the foot status button with the same label and color as strip/ring status", () => {
+    const { container } = render(
+      <MachineTrend
+        machine={machineWithStatus()}
+        orderedIds={["speed", "machine_status"]}
+        timeDomain={{ tMin: Date.parse(t0), tMax: Date.parse(t3) }}
+      />,
+    );
+
+    const open = screen.getByRole("button", { name: "Статус: авария" });
+    expect(open).toHaveTextContent("авария");
+    expect(open.style.getPropertyValue("--status-fill")).toBe("#e53935");
+
+    const lastSeg = [...container.querySelectorAll(".trend-status-seg")].at(-1);
+    expect(lastSeg?.getAttribute("fill")?.toLowerCase()).toBe("#e53935");
   });
 
   it("closes the status modal with the close control, backdrop, and Escape", () => {
@@ -187,15 +204,15 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
     fireEvent.click(screen.getByRole("button", { name: "Затвори" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
     fireEvent.click(document.querySelector(".trend-status-modal-backdrop")!);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -215,7 +232,7 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
     fireEvent.change(screen.getByLabelText("Статус за Струг 1"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("Коментар за Струг 1"), {
       target: { value: "готово след 10 мин" },
@@ -255,7 +272,7 @@ describe("MachineTrend status modal", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Статус" }));
+    fireEvent.click(screen.getByRole("button", { name: "Статус: авария" }));
     fireEvent.change(screen.getByLabelText("Статус за Струг 1"), { target: { value: "0" } });
     fireEvent.keyDown(window, { key: "Escape" });
 

@@ -413,12 +413,16 @@ export function MachineTrend({
           <button
             type="button"
             className="trend-status-open"
+            style={{ ["--status-fill" as string]: ringFill }}
+            aria-label={
+              displayStatusLabel ? `Статус: ${displayStatusLabel}` : "Статус"
+            }
             onClick={() => {
               resetStatusDraft();
               setStatusModalOpen(true);
             }}
           >
-            Статус
+            {displayStatusLabel ?? "Статус"}
           </button>
         ) : null}
       </div>
