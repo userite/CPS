@@ -176,4 +176,42 @@ describe("blondinaHttp parameters", () => {
     );
     db.close();
   });
+
+  it("lists measurements filtered by parameterId", async () => {
+    const db = openBlondina(":memory:");
+    const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
+    const idle = db.getState().parameters.find((parameter) => parameter.id === "idle_time")!;
+    db.updateParameter({
+      ...spindle,
+      rangeMin: 0,
+      rangeMax: 1000,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01"],
+    });
+    db.updateParameter({
+      ...idle,
+      rangeMin: 0,
+      rangeMax: 100,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01"],
+    });
+    db.generate(
+      { from: "2026-10-30T10:00:00.000Z", to: "2026-10-30T10:05:00.000Z" },
+      () => 0.5,
+    );
+
+    const res = mockRes();
+    expect(
+      await handleBlondinaRequest(
+        db,
+        mockReq("GET", "/api/cps/measurements?limit=40&parameterId=spindle_speed"),
+        res,
+      ),
+    ).toBe(true);
+    expect(res.statusCode).toBe(200);
+    const rows = JSON.parse(res.body) as Array<{ parameterId: string }>;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.parameterId === "spindle_speed")).toBe(true);
+    db.close();
+  });
 });

@@ -208,6 +208,45 @@ describe("blondina", () => {
     db.close();
   });
 
+  it("filters recent measurements by one parameter and optionally machine", () => {
+    const db = openBlondina(":memory:");
+    const spindle = db.getState().parameters.find((parameter) => parameter.id === "spindle_speed")!;
+    const idle = db.getState().parameters.find((parameter) => parameter.id === "idle_time")!;
+    db.updateParameter({
+      ...spindle,
+      rangeMin: 0,
+      rangeMax: 1000,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01", "LATHE_02"],
+    });
+    db.updateParameter({
+      ...idle,
+      rangeMin: 0,
+      rangeMax: 100,
+      sampleIntervalSeconds: 60,
+      machineIds: ["LATHE_01", "LATHE_02"],
+    });
+    const period = { from: "2026-10-30T10:00:00.000Z", to: "2026-10-30T10:05:00.000Z" };
+    db.generate(period, () => 0.5);
+
+    const byParameter = db.listMeasurements({ parameterId: "spindle_speed", limit: 50 });
+    expect(byParameter.length).toBeGreaterThan(0);
+    expect(byParameter.every((row) => row.parameterId === "spindle_speed")).toBe(true);
+    expect(byParameter.some((row) => row.machineId === "LATHE_01")).toBe(true);
+    expect(byParameter.some((row) => row.machineId === "LATHE_02")).toBe(true);
+
+    const combined = db.listMeasurements({
+      machineId: "LATHE_01",
+      parameterId: "idle_time",
+      limit: 50,
+    });
+    expect(combined.length).toBeGreaterThan(0);
+    expect(combined.every((row) => row.machineId === "LATHE_01" && row.parameterId === "idle_time")).toBe(
+      true,
+    );
+    db.close();
+  });
+
   it("does not auto-generate status samples and records manual status with comment events", () => {
     const db = openBlondina(":memory:");
     db.createParameter({
