@@ -70,6 +70,7 @@ export async function handleBlondinaRequest(
     if (req.method === "GET" && url.pathname === "/api/cps/measurements") {
       send(res, 200, await db.listMeasurements({
         machineId: url.searchParams.get("machineId") ?? undefined,
+        parameterId: url.searchParams.get("parameterId") ?? undefined,
         limit: Number(url.searchParams.get("limit") ?? 40),
       }));
       return true;

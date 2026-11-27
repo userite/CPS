@@ -1173,26 +1173,26 @@ export async function openBlondinaSql(config: BlondinaSqlConfig): Promise<AsyncB
     async listMeasurements(filter = {}) {
       const limit = Math.min(Math.max(filter.limit ?? 40, 1), 200);
       const request = pool.request().input("limit", sql.Int, limit);
-      const rows = filter.machineId
-        ? await request.input("machineId", sql.NVarChar(64), filter.machineId).query<MeasurementRecord>(`
-            SELECT TOP (@limit) m.id AS machineId, m.name AS machineName,
-                   p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
-                   s.measured_at AS measuredAt, s.value AS value
-            FROM dbo.cps_measurement s
-            JOIN dbo.cps_machine m ON m.id = s.machine_id
-            JOIN dbo.cps_parameter p ON p.id = s.parameter_id
-            WHERE s.machine_id = @machineId
-            ORDER BY s.measured_at DESC
-          `)
-        : await request.query<MeasurementRecord>(`
-            SELECT TOP (@limit) m.id AS machineId, m.name AS machineName,
-                   p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
-                   s.measured_at AS measuredAt, s.value AS value
-            FROM dbo.cps_measurement s
-            JOIN dbo.cps_machine m ON m.id = s.machine_id
-            JOIN dbo.cps_parameter p ON p.id = s.parameter_id
-            ORDER BY s.measured_at DESC
-          `);
+      const clauses: string[] = [];
+      if (filter.machineId) {
+        request.input("machineId", sql.NVarChar(64), filter.machineId);
+        clauses.push("s.machine_id = @machineId");
+      }
+      if (filter.parameterId) {
+        request.input("parameterId", sql.NVarChar(64), filter.parameterId);
+        clauses.push("s.parameter_id = @parameterId");
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const rows = await request.query<MeasurementRecord>(`
+        SELECT TOP (@limit) m.id AS machineId, m.name AS machineName,
+               p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
+               s.measured_at AS measuredAt, s.value AS value
+        FROM dbo.cps_measurement s
+        JOIN dbo.cps_machine m ON m.id = s.machine_id
+        JOIN dbo.cps_parameter p ON p.id = s.parameter_id
+        ${where}
+        ORDER BY s.measured_at DESC
+      `);
       return rows.recordset.map((row) => ({
         machineId: String(row.machineId),
         machineName: String(row.machineName),

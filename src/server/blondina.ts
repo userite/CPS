@@ -196,7 +196,11 @@ export type Blondina = {
   readFirstObject: (windowMs: number) => FirstObjectReading;
   readDashboard: (windowMs: number) => DashboardReading;
   clearMeasurements: (machineId?: string) => number;
-  listMeasurements: (filter?: { machineId?: string; limit?: number }) => MeasurementRow[];
+  listMeasurements: (filter?: {
+    machineId?: string;
+    parameterId?: string;
+    limit?: number;
+  }) => MeasurementRow[];
   close: () => void;
 };
 
@@ -1289,32 +1293,30 @@ export function openBlondina(dbPath: string): Blondina {
     },
     listMeasurements(filter = {}) {
       const limit = Math.min(Math.max(filter.limit ?? 40, 1), 200);
-      const rows = filter.machineId
-        ? db
-            .prepare(
-              `SELECT m.id AS machineId, m.name AS machineName,
-                      p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
-                      s.measured_at AS measuredAt, s.value AS value
-               FROM cps_measurement s
-               JOIN cps_machine m ON m.id = s.machine_id
-               JOIN cps_parameter p ON p.id = s.parameter_id
-               WHERE s.machine_id = ?
-               ORDER BY s.measured_at DESC
-               LIMIT ?`,
-            )
-            .all(filter.machineId, limit)
-        : db
-            .prepare(
-              `SELECT m.id AS machineId, m.name AS machineName,
-                      p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
-                      s.measured_at AS measuredAt, s.value AS value
-               FROM cps_measurement s
-               JOIN cps_machine m ON m.id = s.machine_id
-               JOIN cps_parameter p ON p.id = s.parameter_id
-               ORDER BY s.measured_at DESC
-               LIMIT ?`,
-            )
-            .all(limit);
+      const clauses: string[] = [];
+      const params: Array<string | number> = [];
+      if (filter.machineId) {
+        clauses.push("s.machine_id = ?");
+        params.push(filter.machineId);
+      }
+      if (filter.parameterId) {
+        clauses.push("s.parameter_id = ?");
+        params.push(filter.parameterId);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const rows = db
+        .prepare(
+          `SELECT m.id AS machineId, m.name AS machineName,
+                  p.id AS parameterId, p.label AS parameterLabel, p.unit AS unit,
+                  s.measured_at AS measuredAt, s.value AS value
+           FROM cps_measurement s
+           JOIN cps_machine m ON m.id = s.machine_id
+           JOIN cps_parameter p ON p.id = s.parameter_id
+           ${where}
+           ORDER BY s.measured_at DESC
+           LIMIT ?`,
+        )
+        .all(...params, limit);
       return rows.map((row) => ({
         machineId: String(row.machineId),
         machineName: String(row.machineName),

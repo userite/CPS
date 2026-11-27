@@ -108,13 +108,20 @@ export function AdminPage() {
   const [report, setReport] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
   const [measurementMachine, setMeasurementMachine] = useState("");
+  const [measurementParameter, setMeasurementParameter] = useState("");
 
-  async function reload(machineId = measurementMachine): Promise<void> {
+  async function reload(overrides?: {
+    machineId?: string;
+    parameterId?: string;
+  }): Promise<void> {
+    const machineId = overrides?.machineId ?? measurementMachine;
+    const parameterId = overrides?.parameterId ?? measurementParameter;
     const next = await request<BlondinaState>("/api/cps/state");
     setState(next);
-    const rows = await request<MeasurementRow[]>(
-      `/api/cps/measurements?limit=30${machineId ? `&machineId=${encodeURIComponent(machineId)}` : ""}`,
-    );
+    const query = new URLSearchParams({ limit: "30" });
+    if (machineId) query.set("machineId", machineId);
+    if (parameterId) query.set("parameterId", parameterId);
+    const rows = await request<MeasurementRow[]>(`/api/cps/measurements?${query}`);
     setMeasurements(rows);
   }
 
@@ -830,22 +837,40 @@ export function AdminPage() {
           <div className="admin-card">
             <div className="admin-toolbar">
               <h2>Последни измервания</h2>
-              <label>
-                Машина
-                <select
-                  value={measurementMachine}
-                  onChange={(event) => {
-                    const machineId = event.target.value;
-                    setMeasurementMachine(machineId);
-                    void run(() => reload(machineId));
-                  }}
-                >
-                  <option value="">Всички</option>
-                  {state?.machines.map((machine) => (
-                    <option key={machine.id} value={machine.id}>{machine.name}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="admin-toolbar-filters">
+                <label>
+                  Машина
+                  <select
+                    value={measurementMachine}
+                    onChange={(event) => {
+                      const machineId = event.target.value;
+                      setMeasurementMachine(machineId);
+                      void run(() => reload({ machineId }));
+                    }}
+                  >
+                    <option value="">Всички</option>
+                    {state?.machines.map((machine) => (
+                      <option key={machine.id} value={machine.id}>{machine.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Параметър
+                  <select
+                    value={measurementParameter}
+                    onChange={(event) => {
+                      const parameterId = event.target.value;
+                      setMeasurementParameter(parameterId);
+                      void run(() => reload({ parameterId }));
+                    }}
+                  >
+                    <option value="">Всички</option>
+                    {state?.parameters.map((parameter) => (
+                      <option key={parameter.id} value={parameter.id}>{parameter.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <button
                 type="button"
                 className="btn"
@@ -871,7 +896,7 @@ export function AdminPage() {
                     setReport(
                       `Изчистени ${result.deleted} измервания за „${machineName}“.`,
                     );
-                    await reload(measurementMachine);
+                    await reload({ machineId: measurementMachine });
                   });
                 }}
               >
